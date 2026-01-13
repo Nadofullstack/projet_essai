@@ -1,0 +1,234 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Messages;
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
+
+class MessagesController extends Controller
+{
+    /**
+     * Afficher la liste des messages de l'utilisateur
+     */
+    public function index(): JsonResponse
+    {
+        $user = Auth::user();
+        $messages = Messages::with(['sender', 'receiver'])
+            ->where(function ($query) use ($user) {
+                $query->where('sender_id', $user->id)
+                      ->orWhere('receiver_id', $user->id);
+            })
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $messages
+        ]);
+    }
+
+    /**
+     * Afficher un message spécifique
+     */
+    public function show($id): JsonResponse
+    {
+        $message = Messages::with(['sender', 'receiver', 'replies'])
+            ->find($id);
+
+        if (!$message) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Message non trouvé'
+            ], 404);
+        }
+
+        // Vérifier si l'utilisateur a le droit de voir ce message
+        $user = Auth::user();
+        if ($message->sender_id !== $user->id && $message->receiver_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Non autorisé à voir ce message'
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $message
+        ]);
+    }
+
+    /**
+     * Envoyer un nouveau message
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'content' => 'required|string',
+            'type' => 'required|in:text,image,file,audio',
+            'receiver_id' => 'required|exists:users,id',
+            'attachment' => 'nullable|file|max:10240', // 10MB max
+            'parent_id' => 'nullable|exists:messages,id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur de validation',
+                'errors' => $validator->messages()
+            ], 422);
+        }
+
+        $data = $validator->validated();
+        $data['sender_id'] = Auth::id();
+
+        // Gérer les pièces jointes
+        if ($request->hasFile('attachment')) {
+            $file = $request->file('attachment');
+            $path = $file->store('attachments', 'public');
+            $data['attachment_path'] = $path;
+            $data['attachment_type'] = $file->getClientOriginalExtension();
+            $data['has_attachment'] = true;
+        }
+
+        $message = Messages::create($data);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Message envoyé avec succès',
+            'data' => $message->load(['sender', 'receiver'])
+        ], 201);
+    }
+
+    /**
+     * Marquer un message comme lu
+     */
+    public function markAsRead($id): JsonResponse
+    {
+        $message = Messages::find($id);
+
+        if (!$message) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Message non trouvé'
+            ], 404);
+        }
+
+        $user = Auth::user();
+        if ($message->receiver_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Non autorisé à modifier ce message'
+            ], 403);
+        }
+
+        $message->update(['is_read' => true]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Message marqué comme lu'
+        ]);
+    }
+
+    /**
+     * Obtenir les messages non lus
+     */
+    public function unread(): JsonResponse
+    {
+        $user = Auth::user();
+        $unreadCount = Messages::where('receiver_id', $user->id)
+            ->where('is_read', false)
+            ->count();
+
+        $unreadMessages = Messages::with(['sender'])
+            ->where('receiver_id', $user->id)
+            ->where('is_read', false)
+            ->orderBy('created_at', 'desc')
+            ->limit(50)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'unread_count' => $unreadCount,
+                'messages' => $unreadMessages
+            ]
+        ]);
+    }
+
+    /**
+     * Obtenir les conversations récentes
+     */
+    public function conversations(): JsonResponse
+    {
+        $user = Auth::user();
+        
+        // Obtenir tous les messages de l'utilisateur
+        $messages = Messages::with(['sender', 'receiver'])
+            ->where(function ($query) use ($user) {
+                $query->where('sender_id', $user->id)
+                      ->orWhere('receiver_id', $user->id);
+            })
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // Grouper par conversation
+        $conversations = [];
+        $processedIds = [];
+
+        foreach ($messages as $message) {
+            $otherUserId = $message->sender_id === $user->id ? $message->receiver_id : $message->sender_id;
+            
+            if (!in_array($otherUserId, $processedIds)) {
+                $conversations[] = [
+                    'user' => $message->sender === $user ? $message->receiver : $message->sender,
+                    'last_message' => $message,
+                    'unread_count' => Messages::where('receiver_id', $user->id)
+                        ->where('sender_id', $otherUserId)
+                        ->where('is_read', false)
+                        ->where('created_at', '>=', $message->created_at)
+                        ->count()
+                ];
+                $processedIds[] = $otherUserId;
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => array_slice($conversations, 0, 10) // Limiter à 10 conversations
+        ]);
+    }
+
+    /**
+     * Supprimer un message
+     */
+    public function destroy($id): JsonResponse
+    {
+        $message = Messages::find($id);
+
+        if (!$message) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Message non trouvé'
+            ], 404);
+        }
+
+        $user = Auth::user();
+        if ($message->sender_id !== $user->id && $message->receiver_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Non autorisé à supprimer ce message'
+            ], 403);
+        }
+
+        $message->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Message supprimé avec succès'
+        ]);
+    }
+}
