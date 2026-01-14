@@ -33,9 +33,19 @@ const mainNav = ref([
 // Navigation secondaire
 const secondaryNav = ref([
   { to: '/settings', icon: 'settings', label: 'Paramètres' },
-  { to: '/help', icon: 'help', label: 'Aide' },
-  { to: '/logout', icon: 'logout', label: 'Déconnexion' }
+  { to: '/help', icon: 'help', label: 'Aide' }
 ])
+
+// Fonction de déconnexion
+const logout = () => {
+  // Supprimer le token d'authentification
+  sessionStorage.removeItem('authToken')
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('user')
+  
+  // Rediriger vers la page de login
+  window.location.href = '/login'
+}
 </script>
 
 <template>

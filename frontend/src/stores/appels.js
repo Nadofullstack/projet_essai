@@ -315,6 +315,14 @@ export const useAppelsStore = defineStore('appels', () => {
 
   const getRecentCalls = (limit = 10) => {
     return calls.value
+      .map(call => {
+        const contact = contacts.value.find(c => c.id === call.contactId)
+        return {
+          ...call,
+          contact: contact ? contact.name : 'Inconnu',
+          type: call.status === 'incoming' ? 'incoming' : 'outgoing' // adjust type
+        }
+      })
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
       .slice(0, limit)
   }
