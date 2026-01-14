@@ -18,7 +18,7 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
-      path: '/',
+      path: '/register',
       name: 'register',
       component: Register,
       meta: { requiresAuth: false }
@@ -72,7 +72,7 @@ const router = createRouter({
 //navigation global
 
 router.beforeEach((to,from,next) =>{
-   const isAuthenticated = !!sessionStorage.getItem('authToken')
+   const isAuthenticated = !!localStorage.getItem('auth_token')
  
    //non connecté , par de dashboard
     if(to.meta.requiresAuth && !isAuthenticated){

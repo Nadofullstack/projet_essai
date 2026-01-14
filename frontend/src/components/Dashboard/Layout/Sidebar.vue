@@ -39,9 +39,9 @@ const secondaryNav = ref([
 // Fonction de déconnexion
 const logout = () => {
   // Supprimer le token d'authentification
-  sessionStorage.removeItem('authToken')
   localStorage.removeItem('auth_token')
   localStorage.removeItem('user')
+  sessionStorage.removeItem('authToken')
   
   // Rediriger vers la page de login
   window.location.href = '/login'
@@ -113,7 +113,7 @@ const logout = () => {
 
     <!-- User profile -->
     <div class="p-4 border-t border-gray-200">
-      <div class="flex items-center">
+      <div class="flex items-center mb-3">
         <img 
           :src="user.avatar" 
           :alt="user.name"
@@ -127,6 +127,18 @@ const logout = () => {
           <span class="material-symbols-outlined text-gray-500 text-sm">more_vert</span>
         </button>
       </div>
+      
+      <!-- Bouton de déconnexion -->
+      <button 
+        @click="logout"
+        :class="[
+          'flex items-center w-full rounded-lg px-3 py-2 transition-colors hover:bg-red-50 hover:text-red-600 text-gray-600',
+          props.isCollapsed ? 'justify-center' : ''
+        ]"
+      >
+        <span class="material-symbols-outlined">logout</span>
+        <span v-if="!props.isCollapsed" class="ml-3">Déconnexion</span>
+      </button>
     </div>
   </aside>
 </template>
