@@ -54,23 +54,42 @@ const handleSubmit = async () => {
   isSubmitting.value = true
 
   try {
-    // Simulation d'un appel API pour la connexion
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    console.log('Connexion réussie:', {
-      email: form.email,
+    const response = await fetch('http://localhost:8000/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        email: form.email,
+        password: form.password
+      })
     })
-    
-    // Stocker le token d'authentification (simulation)
-    sessionStorage.setItem('authToken', 'fake-jwt-token')
-    sessionStorage.setItem('userEmail', form.email)
-    
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      if (data.errors) {
+        // Erreurs de validation
+        Object.assign(errors, data.errors)
+      } else {
+        errors.submit = data.message || 'Erreur de connexion'
+      }
+      return
+    }
+
+    // Stocker le token et les informations utilisateur
+    localStorage.setItem('auth_token', data.token)
+    localStorage.setItem('user', JSON.stringify(data.user))
+
+    console.log('Connexion réussie:', data.user)
+
     // Redirection vers le dashboard après connexion
     router.push('/dashboard')
-    
+
   } catch (error) {
     console.error('Erreur de connexion:', error)
-    errors.submit = 'Email ou mot de passe incorrect'
+    errors.submit = 'Erreur de réseau. Veuillez réessayer.'
   } finally {
     isSubmitting.value = false
   }

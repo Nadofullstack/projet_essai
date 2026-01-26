@@ -24,10 +24,7 @@ const user = ref({
 const mainNav = ref([
   { to: '/dashboard', icon: 'dashboard', label: 'Tableau de bord' },
   { to: '/messages', icon: 'chat', label: 'Messages' },
-  { to: '/appels', icon: 'phone', label: 'Appels' },
-  { to: '/audio', icon: 'mic', label: 'Audio' },
   { to: '/rendez-vous', icon: 'event', label: 'Rendez-vous' },
-  { to: '/evenements', icon: 'calendar_month', label: 'Événements' }
 ])
 
 // Navigation secondaire

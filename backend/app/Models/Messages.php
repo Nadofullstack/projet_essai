@@ -26,6 +26,17 @@ class Messages extends Model
         'updated_at' => 'datetime'
     ];
 
+        // protected $fillable = ['user_id', 'conversation_id', 'content', 'created_at'];
+
+    protected $dispatchesEvents = [
+        'created' => MessageSent::class,
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
     /**
      * Obtenir l'expéditeur du message
      */

@@ -146,7 +146,7 @@
                 <span class="material-symbols-outlined icon-sm">lock</span>
               </div>
               <button
-                type="button"
+                type="button"Erreur de réseau. Veuillez réessayer.
                 @click="toggleConfirmPasswordVisibility"
                 class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
               >
@@ -361,21 +361,40 @@ const handleSubmit = async () => {
   isSubmitting.value = true
 
   try {
-    // Simulation d'un appel API
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    console.log('Inscription réussie:', {
-      name: form.name,
-      email: form.email,
-      // Ne pas logger le mot de passe en production
+    const response = await fetch('http://localhost:8000/api/auth/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        password_confirmation: form.confirmPassword
+      })
     })
-    
-    // Redirection après succès
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      if (data.errors) {
+        // Erreurs de validation
+        Object.assign(errors, data.errors)
+      } else {
+        errors.submit = data.message || 'Erreur d\'inscription'
+      }
+      return
+    }
+
+    console.log('Inscription réussie:', data.user)
+
+    // Redirection vers la page de connexion après succès
     router.push('/login')
-    
+
   } catch (error) {
     console.error('Erreur d\'inscription:', error)
-    errors.submit = 'Une erreur est survenue. Veuillez réessayer.'
+    errors.submit = 'Erreur de réseau. Veuillez réessayer.'
   } finally {
     isSubmitting.value = false
   }

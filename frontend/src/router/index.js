@@ -37,30 +37,15 @@ const router = createRouter({
       component: Messages,
       meta: { requiresAuth: true }
     },
-    {
-      path: '/appels',
-      name: 'appels',
-      component: Appels,
-      meta: { requiresAuth: true }
-    },
+  
     {
       path: '/rendez-vous',
       name: 'rendez-vous',
       component: RendezVous,
       meta: { requiresAuth: true }
     },
-    {
-      path: '/evenements',
-      name: 'evenements',
-      component: Evenements,
-      meta: { requiresAuth: true }
-    },
-    {
-      path: '/audio',
-      name: 'audio',
-      component: AudioManager,
-      meta: { requiresAuth: true }
-    },
+   
+ 
     // Routes par défaut
     {
       path: '/:pathMatch(.*)*',
