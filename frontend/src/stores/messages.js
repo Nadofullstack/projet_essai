@@ -15,16 +15,21 @@ export const useMessagesStore = defineStore('messages', () => {
     
     try {
       const response = await api.get('/messages/conversations')
-      conversations.value = response.data.map(conv => ({
-        id: conv.id,
-        name: conv.contact?.name || 'Utilisateur',
-        avatar: conv.contact?.avatar || null,
-        lastMessage: conv.last_message || '',
-        time: conv.updated_at ? new Date(conv.updated_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '',
-        unreadCount: conv.unread_count || 0,
-        isOnline: conv.contact?.is_online || false,
-        messages: conv.messages || []
-      }))
+      const convData = response.data.data || response.data // Support les deux formats
+      
+      conversations.value = convData.map(conv => {
+        // Le backend retourne { id, name, avatar, lastMessage, last_message_time, unread_count }
+        return {
+          id: conv.id,
+          name: conv.name || 'Utilisateur',
+          avatar: conv.avatar || null,
+          lastMessage: conv.lastMessage || '',
+          time: conv.last_message_time ? new Date(conv.last_message_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'À l\'instant',
+          unreadCount: conv.unread_count || 0,
+          isOnline: false, // À mettre à jour avec WebSocket
+          messages: []
+        }
+      })
     } catch (err) {
       error.value = err.response?.data?.message || 'Erreur lors du chargement des conversations'
       console.error('Erreur fetchConversations:', err)
@@ -185,33 +190,80 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
-  const sendMessage = async ({ conversationId, content }) => {
+  const sendMessage = async ({ conversationId, content, receiverId, type = 'text' }) => {
+    if (!conversationId) {
+      error.value = 'Conversation non sélectionnée'
+      throw new Error('Conversation non sélectionnée')
+    }
+
+    const conversation = conversations.value.find(c => c.id === conversationId)
+    if (!conversation) {
+      error.value = 'Conversation non trouvée'
+      throw new Error('Conversation non trouvée')
+    }
+
+    // Créer le message localement immédiatement (optimistic update)
+    const tempId = Math.random().toString(36).substr(2, 9)
+    const newMessage = {
+      id: tempId,
+      content: content,
+      time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      isSender: true,
+      status: 'pending', // En attente d'envoi
+      isRead: true
+    }
+
+    // Ajouter le message immédiatement (optimistic update)
+    conversation.messages = [...conversation.messages, newMessage]
+    conversation.lastMessage = content
+    conversation.time = 'À l\'instant'
+
     try {
+      // Envoyer le message au serveur
       const response = await api.post('/messages', {
-        conversation_id: conversationId,
-        content: content
+        receiver_id: receiverId,
+        content: content,
+        type: type
       })
 
-      // Mettre à jour la conversation localement
-      const conversation = conversations.value.find(c => c.id === conversationId)
-      if (conversation) {
-        const newMessage = {
-          id: response.data.id,
-          content: response.data.content,
-          time: new Date(response.data.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      // Mettre à jour le statut du message avec la réponse du serveur
+      const messageIndex = conversation.messages.findIndex(m => m.id === tempId)
+      if (messageIndex > -1) {
+        conversation.messages[messageIndex] = {
+          id: response.data.data?.id || response.data.id || tempId,
+          content: content,
+          time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
           isSender: true,
           status: 'sent',
-          isRead: false
+          isRead: true
         }
-
-        conversation.messages.push(newMessage)
-        conversation.lastMessage = content
-        conversation.time = 'À l\'instant'
+        // Forcer la réactivité
+        conversation.messages = [...conversation.messages]
       }
 
       return response.data
     } catch (err) {
-      error.value = err.response?.data?.message || 'Erreur lors de l\'envoi du message'
+      console.error('Erreur sendMessage:', err)
+      
+      // Déterminer la cause de l'erreur
+      if (err.code === 'ECONNABORTED') {
+        error.value = 'Timeout: le serveur met trop de temps à répondre'
+      } else if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
+        error.value = 'Erreur réseau: impossible de contacter le serveur'
+        // Marquer le message comme non envoyé
+        const messageIndex = conversation.messages.findIndex(m => m.id === tempId)
+        if (messageIndex > -1) {
+          conversation.messages[messageIndex].status = 'failed'
+          conversation.messages = [...conversation.messages]
+        }
+      } else if (err.response?.status === 401) {
+        error.value = 'Non authentifié: veuillez vous reconnecter'
+      } else if (err.response?.status >= 500) {
+        error.value = 'Erreur serveur: veuillez réessayer plus tard'
+      } else {
+        error.value = err.response?.data?.message || err.message || 'Erreur lors de l\'envoi du message'
+      }
+      
       throw err
     }
   }
@@ -263,6 +315,86 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
+  /**
+   * Récupérer la liste des utilisateurs pour recherche
+   */
+  const searchUsers = async (searchQuery = '') => {
+    try {
+      const response = await api.get('/messages/users/list', {
+        params: { search: searchQuery }
+      })
+      return response.data.data || []
+    } catch (err) {
+      console.error('Erreur searchUsers:', err)
+      error.value = err.response?.data?.message || 'Erreur lors de la recherche'
+      
+      // Fallback avec données démo
+      const demoUsers = [
+        {
+          id: 2,
+          name: 'Alice Dubois',
+          email: 'alice@example.com',
+          profile_picture: 'https://picsum.photos/seed/alice/100/100.jpg'
+        },
+        {
+          id: 3,
+          name: 'Bob Martin',
+          email: 'bob@example.com',
+          profile_picture: 'https://picsum.photos/seed/bob/100/100.jpg'
+        },
+        {
+          id: 4,
+          name: 'Carol Smith',
+          email: 'carol@example.com',
+          profile_picture: 'https://picsum.photos/seed/carol/100/100.jpg'
+        },
+        {
+          id: 5,
+          name: 'David Johnson',
+          email: 'david@example.com',
+          profile_picture: 'https://picsum.photos/seed/david/100/100.jpg'
+        }
+      ]
+      
+      // Filtrer par requête de recherche
+      if (!searchQuery) return demoUsers
+      
+      const query = searchQuery.toLowerCase()
+      return demoUsers.filter(user => 
+        user.name.toLowerCase().includes(query) || 
+        user.email.toLowerCase().includes(query)
+      )
+
+    }
+  }
+
+  /**
+   * Démarrer une conversation avec un utilisateur
+   */
+  const startConversationWithUser = (user) => {
+    const existingConv = conversations.value.find(c => c.id === user.id)
+    
+    if (existingConv) {
+      return existingConv
+    }
+    
+    // Créer une nouvelle conversation
+    const newConversation = {
+      id: user.id,
+      name: user.name,
+      avatar: user.profile_picture || `https://picsum.photos/seed/${user.name}/100/100.jpg`,
+      lastMessage: '',
+      time: 'À l\'instant',
+      unreadCount: 0,
+      isOnline: true,
+      messages: [],
+      userId: user.id
+    }
+    
+    conversations.value.unshift(newConversation)
+    return newConversation
+  }
+
   return {
     // État
     conversations,
@@ -274,6 +406,8 @@ export const useMessagesStore = defineStore('messages', () => {
     sendMessage,
     createNewConversation,
     markConversationAsRead,
-    deleteConversation
+    deleteConversation,
+    searchUsers,
+    startConversationWithUser
   }
 })

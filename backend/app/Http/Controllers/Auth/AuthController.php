@@ -133,4 +133,40 @@ class AuthController extends Controller
             'user' => $request->user()
         ]);
     }
+
+    /**
+     * Obtenir un token de test (développement uniquement)
+     */
+    public function testToken()
+    {
+        // À utiliser uniquement en développement
+        if (app()->environment('production')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Not available in production'
+            ], 403);
+        }
+
+        $user = User::where('email', 'test@example.com')->first();
+        
+        if (!$user) {
+            $user = User::create([
+                'name' => 'Test User',
+                'email' => 'test@example.com',
+                'password' => bcrypt('password123'),
+            ]);
+        }
+
+        // Supprimer les anciens tokens
+        $user->tokens()->delete();
+        
+        // Créer un nouveau token
+        $token = $user->createToken('test-token')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'user' => $user,
+            'token' => $token
+        ]);
+    }
 }

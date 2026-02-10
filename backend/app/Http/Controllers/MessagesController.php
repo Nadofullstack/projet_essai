@@ -164,42 +164,56 @@ class MessagesController extends Controller
      */
     public function conversations(): JsonResponse
     {
-        $user = Auth::user();
-        
-        // Obtenir tous les messages de l'utilisateur
-        $messages = Messages::with(['sender', 'receiver'])
-            ->where(function ($query) use ($user) {
-                $query->where('sender_id', $user->id)
-                      ->orWhere('receiver_id', $user->id);
-            })
-            ->orderBy('created_at', 'desc')
-            ->get();
-
-        // Grouper par conversation
-        $conversations = [];
-        $processedIds = [];
-
-        foreach ($messages as $message) {
-            $otherUserId = $message->sender_id === $user->id ? $message->receiver_id : $message->sender_id;
+        try {
+            $user = Auth::user();
             
-            if (!in_array($otherUserId, $processedIds)) {
-                $conversations[] = [
-                    'user' => $message->sender === $user ? $message->receiver : $message->sender,
-                    'last_message' => $message,
-                    'unread_count' => Messages::where('receiver_id', $user->id)
-                        ->where('sender_id', $otherUserId)
-                        ->where('is_read', false)
-                        ->where('created_at', '>=', $message->created_at)
-                        ->count()
-                ];
-                $processedIds[] = $otherUserId;
-            }
-        }
+            // Obtenir tous les messages de l'utilisateur
+            $messages = Messages::with(['sender', 'receiver'])
+                ->where(function ($query) use ($user) {
+                    $query->where('sender_id', $user->id)
+                          ->orWhere('receiver_id', $user->id);
+                })
+                ->orderBy('created_at', 'desc')
+                ->get();
 
-        return response()->json([
-            'success' => true,
-            'data' => array_slice($conversations, 0, 10) // Limiter à 10 conversations
-        ]);
+            // Grouper par conversation
+            $conversations = [];
+            $processedIds = [];
+
+            foreach ($messages as $message) {
+                $otherUserId = $message->sender_id === $user->id ? $message->receiver_id : $message->sender_id;
+                
+                if (!in_array($otherUserId, $processedIds)) {
+                    $otherUser = $message->sender_id === $user->id ? $message->receiver : $message->sender;
+                    if ($otherUser) {
+                        $conversations[] = [
+                            'id' => $otherUserId,
+                            'name' => $otherUser->name ?? 'Unknown',
+                            'avatar' => $otherUser->profile_picture ?? null,
+                            'lastMessage' => $message->content,
+                            'last_message_time' => $message->created_at,
+                            'unread_count' => Messages::where('receiver_id', $user->id)
+                                ->where('sender_id', $otherUserId)
+                                ->where('is_read', false)
+                                ->count()
+                        ];
+                        $processedIds[] = $otherUserId;
+                    }
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => array_slice($conversations, 0, 10) // Limiter à 10 conversations
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Erreur conversations: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des conversations',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -229,6 +243,33 @@ class MessagesController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Message supprimé avec succès'
+        ]);
+    }
+
+    /**
+     * Obtenir la liste de tous les utilisateurs (sauf l'utilisateur courant)
+     */
+    public function listUsers(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        $search = $request->query('search', '');
+
+        $query = User::where('id', '!=', $user->id)
+            ->select('id', 'name', 'email', 'profile_picture', 'created_at');
+
+        // Recherche par nom ou email si fourni
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%$search%")
+                  ->orWhere('email', 'like', "%$search%");
+            });
+        }
+
+        $users = $query->orderBy('name')->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $users
         ]);
     }
 }

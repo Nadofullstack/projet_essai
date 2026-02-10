@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Events\MessageSent;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -25,8 +26,6 @@ class Messages extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime'
     ];
-
-        // protected $fillable = ['user_id', 'conversation_id', 'content', 'created_at'];
 
     protected $dispatchesEvents = [
         'created' => MessageSent::class,

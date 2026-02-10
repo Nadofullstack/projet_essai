@@ -11,9 +11,18 @@ use App\Http\Controllers\AppelsController;
 use App\Http\Controllers\AudiManangerController;
 use App\Http\Controllers\CalendarController;
 
+// Health check endpoint
+Route::get('/health', function () {
+    return response()->json([
+        'status' => 'ok',
+        'timestamp' => now()
+    ]);
+});
+
 // Routes pour l'authentification
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
+Route::get('/auth/test-token', [AuthController::class, 'testToken']); // For development only
 Route::post('/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 Route::get('/user', [AuthController::class, 'user'])->middleware('auth:sanctum');
 
@@ -35,12 +44,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // Routes pour les messages
 Route::middleware('auth:sanctum')->group(function () {
+    // Routes sans paramètres d'abord
     Route::get('/messages', [MessagesController::class, 'index']);
-    Route::get('/messages/{id}', [MessagesController::class, 'show']);
     Route::post('/messages', [MessagesController::class, 'store']);
-    Route::put('/messages/{id}/read', [MessagesController::class, 'markAsRead']);
     Route::get('/messages/unread', [MessagesController::class, 'unread']);
     Route::get('/messages/conversations', [MessagesController::class, 'conversations']);
+    Route::get('/messages/users/list', [MessagesController::class, 'listUsers']);
+    
+    // Routes avec paramètres ensuite
+    Route::get('/messages/{id}', [MessagesController::class, 'show']);
+    Route::put('/messages/{id}/read', [MessagesController::class, 'markAsRead']);
     Route::delete('/messages/{id}', [MessagesController::class, 'destroy']);
 });
 

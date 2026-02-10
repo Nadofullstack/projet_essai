@@ -1,0 +1,13 @@
+#!/usr/bin/env php
+<?php
+
+// Simple script to setup the database
+require __DIR__ . '/vendor/autoload.php';
+
+$app = require_once __DIR__ . '/bootstrap/app.php';
+
+$kernel = $app->make(\Illuminate\Contracts\Console\Kernel::class);
+
+$status = $kernel->call('migrate:fresh', ['--seed' => true]);
+
+exit($status);

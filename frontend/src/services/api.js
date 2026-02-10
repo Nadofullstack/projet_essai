@@ -5,7 +5,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 // Création d'une instance axios avec configuration par défaut
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 5000, // Réduit à 5 secondes pour éviter les lenteurs
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
@@ -31,11 +31,23 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expiré ou invalide
-      localStorage.removeItem('auth_token')
-      localStorage.removeItem('user')
-      // Rediriger vers la page de login
-      window.location.href = '/login'
+      const token = localStorage.getItem('auth_token')
+      
+      // Seulement rediriger si c'est un vrai token (pas un demo token)
+      if (token && !token.startsWith('demo-token')) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user')
+        // Rediriger vers la page de login
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login'
+        }
+      } else if (!token) {
+        // Pas de token = tenter d'en obtenir un via healthCheck
+        console.warn('⚠️ 401 - Pas de token. Vous devriez vous authentifier.')
+      } else {
+        // Token de démo = continuer en mode démo
+        console.debug('En mode démo avec token de démo')
+      }
     }
     return Promise.reject(error)
   }

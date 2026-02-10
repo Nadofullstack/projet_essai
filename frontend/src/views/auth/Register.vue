@@ -239,6 +239,7 @@
 <script setup>
 import { ref, computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import api, { API_ENDPOINTS } from '@/services/api'
 
 const router = useRouter()
 
@@ -361,31 +362,14 @@ const handleSubmit = async () => {
   isSubmitting.value = true
 
   try {
-    const response = await fetch('http://localhost:8000/api/auth/register', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        name: form.name,
-        email: form.email,
-        password: form.password,
-        password_confirmation: form.confirmPassword
-      })
+    const res = await api.post(API_ENDPOINTS.AUTH.REGISTER, {
+      name: form.name,
+      email: form.email,
+      password: form.password,
+      password_confirmation: form.confirmPassword
     })
 
-    const data = await response.json()
-
-    if (!response.ok) {
-      if (data.errors) {
-        // Erreurs de validation
-        Object.assign(errors, data.errors)
-      } else {
-        errors.submit = data.message || 'Erreur d\'inscription'
-      }
-      return
-    }
+    const data = res.data
 
     console.log('Inscription réussie:', data.user)
 
@@ -393,8 +377,17 @@ const handleSubmit = async () => {
     router.push('/login')
 
   } catch (error) {
-    console.error('Erreur d\'inscription:', error)
-    errors.submit = 'Erreur de réseau. Veuillez réessayer.'
+    if (error.response) {
+      const data = error.response.data
+      if (data.errors) {
+        Object.assign(errors, data.errors)
+      } else {
+        errors.submit = data.message || 'Erreur d\'inscription'
+      }
+    } else {
+      console.error('Erreur d\'inscription:', error)
+      errors.submit = 'Erreur de réseau. Veuillez réessayer.'
+    }
   } finally {
     isSubmitting.value = false
   }

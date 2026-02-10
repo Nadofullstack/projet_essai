@@ -1,5 +1,15 @@
 <template>
   <MainLayout>
+    <!-- Server Status Alert -->
+    <div v-if="!serverAvailable" class="bg-yellow-50 border-b-2 border-yellow-300 px-4 py-3">
+      <div class="max-w-7xl mx-auto flex items-center space-x-3">
+        <span class="material-symbols-outlined text-yellow-600">warning</span>
+        <p class="text-sm text-yellow-800">
+          <strong>Mode démo:</strong> Le serveur n'est pas accessible. Les données affichées sont simulées. Assurez-vous que le serveur Laravel est en cours d'exécution sur <code class="bg-yellow-100 px-2 py-1 rounded">localhost:8000</code>
+        </p>
+      </div>
+    </div>
+
     <!-- Header -->
     <div class="bg-white shadow-sm border-b border-gray-200">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -10,10 +20,6 @@
             </button>
             <h1 class="text-2xl font-bold text-gray-900">Messages</h1>
           </div>
-          <button @click="showNewMessageModal = true" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2">
-            <span class="material-symbols-outlined">add</span>
-            <span>Nouveau message</span>
-          </button>
         </div>
       </div>
     </div>
@@ -27,7 +33,7 @@
           selectedConversation ? 'hidden lg:block lg:col-span-1' : 'block lg:col-span-1'
         ]">
           <div class="p-4 border-b border-gray-200">
-            <div class="relative">
+            <div class="relative mb-4">
               <input 
                 v-model="searchQuery"
                 type="text" 
@@ -35,6 +41,35 @@
                 class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
               <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400">search</span>
+            </div>
+            
+            <!-- Recherche d'utilisateurs -->
+            <div class="relative">
+              <input 
+                v-model="userSearchQuery"
+                type="text" 
+                placeholder="Trouver un utilisateur..."
+                @input="searchUsersDebounced"
+                class="w-full pl-10 pr-4 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              >
+              <span class="material-symbols-outlined absolute left-3 top-2.5 text-green-400">person_add</span>
+              
+              <!-- Résultats de recherche -->
+              <div v-if="showUserSearchResults && userSearchResults.length > 0" class="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                <div 
+                  v-for="user in userSearchResults" 
+                  :key="user.id"
+                  @click="selectUserAndStartConversation(user)"
+                  class="p-3 border-b border-gray-100 cursor-pointer hover:bg-green-50 transition-colors flex items-center space-x-3"
+                >
+                  <img :src="user.profile_picture || `https://picsum.photos/seed/${user.name}/50/50.jpg`" :alt="user.name" class="w-8 h-8 rounded-full">
+                  <div class="flex-1 min-w-0">
+                    <p class="font-medium text-gray-900 truncate">{{ user.name }}</p>
+                    <p class="text-xs text-gray-500 truncate">{{ user.email }}</p>
+                  </div>
+                  <span class="material-symbols-outlined text-green-600">arrow_forward</span>
+                </div>
+              </div>
             </div>
           </div>
           
@@ -71,9 +106,9 @@
         <!-- Chat Area -->
         <div :class="[
           'bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col mobile-transition',
-          selectedConversation ? 'block lg:col-span-2' : 'hidden lg:block lg:col-span-2'
+          currentConversation ? 'block lg:col-span-2' : 'hidden lg:block lg:col-span-2'
         ]">
-          <div v-if="selectedConversation" class="flex flex-col h-full">
+          <div v-if="currentConversation" class="flex flex-col h-full">
             <!-- Chat Header -->
             <div class="p-4 border-b border-gray-200 flex items-center justify-between">
               <div class="flex items-center space-x-3">
@@ -228,47 +263,6 @@
               <p class="text-gray-500">Choisissez une conversation pour commencer à discuter</p>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- New Message Modal -->
-    <div v-if="showNewMessageModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-xl p-6 w-full max-w-md">
-        <h2 class="text-xl font-bold text-gray-900 mb-4">Nouveau message</h2>
-        <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Destinataire</label>
-            <input 
-              v-model="newMessageData.recipient"
-              type="text" 
-              placeholder="Nom du destinataire..."
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Message</label>
-            <textarea 
-              v-model="newMessageData.content"
-              rows="4"
-              placeholder="Votre message..."
-              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            ></textarea>
-          </div>
-        </div>
-        <div class="flex justify-end space-x-2 mt-6">
-          <button 
-            @click="showNewMessageModal = false"
-            class="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            Annuler
-          </button>
-          <button 
-            @click="createNewMessage"
-            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Envoyer
-          </button>
         </div>
       </div>
     </div>
@@ -457,11 +451,12 @@ const appelsStore = useAppelsStore()
 const searchQuery = ref('')
 const selectedConversation = ref(null)
 const newMessage = ref('')
-const showNewMessageModal = ref(false)
-const newMessageData = ref({
-  recipient: '',
-  content: ''
-})
+const serverAvailable = ref(true)
+
+// État de la recherche utilisateur
+const userSearchQuery = ref('')
+const userSearchResults = ref([])
+const showUserSearchResults = ref(false)
 
 // État des appels
 const showCallModal = ref(false)
@@ -504,10 +499,41 @@ const callStatusText = computed(() => {
   }
 })
 
+// ✅ Computed pour synchroniser la conversation sélectionnée avec le store
+const currentConversation = computed({
+  get() {
+    if (selectedConversation.value) {
+      // Récupérer la version à jour depuis le store
+      return messagesStore.conversations.find(c => c.id === selectedConversation.value.id) || selectedConversation.value
+    }
+    return null
+  },
+  set(newValue) {
+    selectedConversation.value = newValue
+  }
+})
+
 // Méthodes
 const selectConversation = (conversation) => {
+  // ✅ Créer une référence réactive à la conversation sélectionnée
   selectedConversation.value = conversation
   messagesStore.markConversationAsRead(conversation.id)
+  
+  // ✅ Watcher pour synchroniser les changements
+  watch(
+    () => messagesStore.conversations,
+    (newConversations) => {
+      if (selectedConversation.value) {
+        // Mettre à jour la conversation sélectionnée avec les derniers changements
+        const updated = newConversations.find(c => c.id === selectedConversation.value.id)
+        if (updated) {
+          selectedConversation.value = updated
+        }
+      }
+    },
+    { deep: true }
+  )
+  
   // Scroll to bottom of messages on mobile
   nextTick(() => {
     const messagesContainer = document.querySelector('.overflow-y-auto')
@@ -517,25 +543,75 @@ const selectConversation = (conversation) => {
   })
 }
 
-const sendMessage = () => {
-  if (newMessage.value.trim() && selectedConversation.value) {
-    messagesStore.sendMessage({
+const sendMessage = async () => {
+  if (!newMessage.value.trim() || !selectedConversation.value) {
+    return
+  }
+
+  const messageContent = newMessage.value.trim()
+  newMessage.value = '' // Clear input immédiatement
+  
+  try {
+    await messagesStore.sendMessage({
       conversationId: selectedConversation.value.id,
-      content: newMessage.value.trim()
+      receiverId: selectedConversation.value.id, // ID du destinataire
+      content: messageContent,
+      type: 'text' // Type par défaut
     })
-    newMessage.value = ''
-    // Scroll to bottom after sending message
+    
+    // Scroll to bottom après envoi réussi
     nextTick(() => {
       const messagesContainer = document.querySelector('.overflow-y-auto')
       if (messagesContainer) {
         messagesContainer.scrollTop = messagesContainer.scrollHeight
       }
     })
+  } catch (error) {
+    console.error('Erreur lors de l\'envoi du message:', error)
+    
+    // Afficher l'erreur du store
+    if (messagesStore.error) {
+      // Créer une alerte visible à l'utilisateur
+      alert(`❌ ${messagesStore.error}`)
+    } else {
+      alert('❌ Erreur lors de l\'envoi du message. Veuillez vérifier votre connexion.')
+    }
   }
 }
 
 const goBackToConversations = () => {
   selectedConversation.value = null
+}
+
+// Recherche utilisateurs avec délai
+const searchUsersDebounced = (() => {
+  let timeoutId = null
+  return async (query) => {
+    clearTimeout(timeoutId)
+    if (!query) {
+      showUserSearchResults.value = false
+      userSearchResults.value = []
+      return
+    }
+    timeoutId = setTimeout(async () => {
+      try {
+        const results = await messagesStore.searchUsers(query)
+        userSearchResults.value = results
+        showUserSearchResults.value = results.length > 0
+      } catch (error) {
+        console.error('Erreur lors de la recherche d\'utilisateurs:', error)
+        userSearchResults.value = []
+        showUserSearchResults.value = false
+      }
+    }, 300)
+  }
+})()
+
+const selectUserAndStartConversation = (user) => {
+  const conversation = messagesStore.startConversationWithUser(user)
+  selectConversation(conversation)
+  userSearchQuery.value = ''
+  showUserSearchResults.value = false
 }
 
 const startAudioCall = () => {
@@ -736,6 +812,15 @@ const startCallTimer = () => {
 
 // Chargement initial
 onMounted(async () => {
+  // Vérifier la santé du serveur
+  const { checkServerHealth } = await import('@/services/healthCheck')
+  const health = await checkServerHealth()
+  serverAvailable.value = health.available
+  
+  if (!health.available) {
+    console.warn('⚠️ Server not available, using demo data')
+  }
+  
   messagesStore.fetchConversations()
   
   // Vérifier la disponibilité des périphériques vidéo
