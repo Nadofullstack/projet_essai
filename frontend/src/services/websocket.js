@@ -100,8 +100,8 @@ export function subscribeToConversation(userId1, userId2, onMessageReceived) {
   // S'abonner au canal privé
   const subscription = echo.private(`chat.${conversationKey}`);
 
-  // Écouter l'événement 'message.sent'
-  subscription.listen('MessageSent', (data) => {
+  // Écouter l'événement broadcasté par Laravel (broadcastAs 'message.sent')
+  subscription.listen('message.sent', (data) => {
     console.log('Message reçu:', data);
     onMessageReceived(data);
   });
@@ -109,7 +109,7 @@ export function subscribeToConversation(userId1, userId2, onMessageReceived) {
   // Retourner une fonction pour se désabonner
   return () => {
     console.log(`Se désabonner de chat.${conversationKey}`);
-    subscription.stopListening('MessageSent');
+    subscription.stopListening('message.sent');
     echo.leaveChannel(`private-chat.${conversationKey}`);
   };
 }

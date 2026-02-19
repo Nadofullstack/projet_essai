@@ -2,13 +2,77 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/services/api'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
 export const useMessagesStore = defineStore('messages', () => {
   // État
   const conversations = ref([])
+  const availableUsers = ref([])
   const loading = ref(false)
+  const usersLoading = ref(false)
   const error = ref(null)
+  const searchQuery = ref('')
+  const currentUserId = ref(null)
+
+  // Computed
+  const filteredUsers = computed(() => {
+    if (!searchQuery.value.trim()) return availableUsers.value
+    
+    const query = searchQuery.value.toLowerCase()
+    return availableUsers.value.filter(user =>
+      user.name.toLowerCase().includes(query) ||
+      user.email.toLowerCase().includes(query)
+    )
+  })
+
+  const sortedConversations = computed(() => {
+    return [...conversations.value].sort((a, b) => {
+      const timeA = new Date(a.lastMessageTime || a.time || 0).getTime()
+      const timeB = new Date(b.lastMessageTime || b.time || 0).getTime()
+      return timeB - timeA
+    })
+  })
 
   // Actions
+  /**
+   * Définir l'utilisateur courant pour le store (id ou objet)
+   */
+  const setCurrentUser = (user) => {
+    if (!user) return
+    if (typeof user === 'number') {
+      currentUserId.value = user
+    } else if (typeof user === 'object') {
+      currentUserId.value = user.id || user.userId || null
+    }
+  }
+
+  const fetchAvailableUsers = async () => {
+    usersLoading.value = true
+    error.value = null
+
+    try {
+      const response = await api.get('/messages/users/list')
+      const usersData = response.data.data || response.data.users || []
+
+      availableUsers.value = usersData.map(user => ({
+        id: user.id,
+        name: user.name || user.nom || 'Utilisateur',
+        email: user.email,
+        avatar: user.avatar || user.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`,
+        isOnline: user.isOnline || user.is_online || false
+      }))
+
+      console.log('✓ Utilisateurs disponibles chargés:', availableUsers.value.length)
+      return true
+    } catch (err) {
+      error.value = 'Erreur lors du chargement des utilisateurs'
+      console.error('Erreur fetchAvailableUsers:', err)
+      return false
+    } finally {
+      usersLoading.value = false
+    }
+  }
+
   const fetchConversations = async () => {
     loading.value = true
     error.value = null
@@ -395,19 +459,96 @@ export const useMessagesStore = defineStore('messages', () => {
     return newConversation
   }
 
+  /**
+   * Gérer un message entrant (depuis WebSocket)
+   * Met à jour la conversation correspondante ou en crée une nouvelle
+   */
+  const handleIncomingMessage = (message) => {
+    try {
+      const senderId = message.sender_id || message.sender?.id || message.senderId
+      const receiverId = message.receiver_id || message.receiver?.id || message.receiverId
+
+      // Tenter de trouver une conversation existante par plusieurs clés
+      let convIndex = conversations.value.findIndex(c =>
+        c.id === senderId || c.id === receiverId ||
+        c.userId === senderId || c.userId === receiverId
+      )
+
+      const newMsg = {
+        id: message.id,
+        content: message.content || message.body || '',
+        time: message.created_at ? new Date(message.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : (new Date()).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        isSender: !!(message.sender_id && message.sender_id === (currentUserId.value || parseInt(localStorage.getItem('user_id')))),
+        isRead: !!message.is_read
+      }
+
+      if (convIndex === -1) {
+        // Créer une nouvelle conversation basée sur les données du message
+        const participantId = senderId || receiverId
+        const participant = message.sender || message.receiver || { id: participantId, name: message.sender_name || message.sender?.name || 'Utilisateur' }
+
+        const newConversation = {
+          id: participantId,
+          userId: participantId,
+          name: participant.name || 'Utilisateur',
+          avatar: participant.avatar || participant.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${participantId}`,
+          lastMessage: newMsg.content,
+          lastMessageTime: message.created_at || new Date().toISOString(),
+          time: newMsg.time,
+          unreadCount: newMsg.isSender ? 0 : 1,
+          isOnline: false,
+          messages: [newMsg]
+        }
+
+        conversations.value.unshift(newConversation)
+      } else {
+        // Mettre à jour la conversation existante
+        const conv = conversations.value[convIndex]
+
+        conv.messages = conv.messages || []
+
+        // Éviter les doublons
+        if (!conv.messages.some(m => m.id === newMsg.id)) {
+          conv.messages.push(newMsg)
+        }
+
+        conv.lastMessage = newMsg.content
+        conv.lastMessageTime = message.created_at || new Date().toISOString()
+        conv.time = newMsg.time
+
+        // Incrémenter le compteur de non lus si le destinataire est l'utilisateur courant
+        const meId = currentUserId.value || parseInt(localStorage.getItem('user_id'))
+        if (meId && message.receiver_id && parseInt(message.receiver_id) === meId) {
+          conv.unreadCount = (conv.unreadCount || 0) + 1
+        }
+
+        // Déplacer la conversation en tête
+        conversations.value.splice(convIndex, 1)
+        conversations.value.unshift(conv)
+      }
+    } catch (err) {
+      console.error('Erreur handleIncomingMessage:', err)
+    }
+  }
+
   return {
     // État
     conversations,
+    availableUsers,
     loading,
     error,
     
     // Actions
     fetchConversations,
+    fetchAvailableUsers,
     sendMessage,
     createNewConversation,
     markConversationAsRead,
     deleteConversation,
     searchUsers,
     startConversationWithUser
+    ,
+    handleIncomingMessage,
+    setCurrentUser
   }
 })

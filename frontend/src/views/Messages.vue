@@ -441,6 +441,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch, onUnmounted } from 'vue'
 import { useMessagesStore } from '@/stores/messages'
+import { useDashboardStore } from '@/stores/dashboard'
 import { useAppelsStore } from '@/stores/appels'
 import MainLayout from '@/components/Dashboard/Layout/MainLayout.vue'
 
@@ -588,9 +589,17 @@ const searchUsersDebounced = (() => {
   let timeoutId = null
   return async (query) => {
     clearTimeout(timeoutId)
+    // If empty, show currently available (online) users
     if (!query) {
-      showUserSearchResults.value = false
-      userSearchResults.value = []
+      try {
+        // ensure we have available users loaded
+        await messagesStore.fetchAvailableUsers()
+        userSearchResults.value = messagesStore.availableUsers.filter(u => u.isOnline)
+        showUserSearchResults.value = userSearchResults.value.length > 0
+      } catch (err) {
+        userSearchResults.value = []
+        showUserSearchResults.value = false
+      }
       return
     }
     timeoutId = setTimeout(async () => {
@@ -821,6 +830,20 @@ onMounted(async () => {
     console.warn('⚠️ Server not available, using demo data')
   }
   
+  // Définir l'utilisateur courant pour le store messages (pour gestion des unread etc.)
+  try {
+    const dashboardStore = useDashboardStore()
+    // Si le dashboard n'a pas été initialisé, on peut appeler fetchDashboardData
+    if (!dashboardStore.currentUser || !dashboardStore.currentUser.id) {
+      await dashboardStore.fetchDashboardData()
+    }
+    messagesStore.setCurrentUser(dashboardStore.currentUser)
+  } catch (err) {
+    console.warn('Impossible de récupérer currentUser depuis dashboard store:', err)
+  }
+
+  // Charger les utilisateurs disponibles et conversations
+  messagesStore.fetchAvailableUsers()
   messagesStore.fetchConversations()
   
   // Vérifier la disponibilité des périphériques vidéo

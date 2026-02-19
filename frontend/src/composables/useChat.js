@@ -7,6 +7,7 @@ import {
   getConversationKey,
 } from '@/services/websocket';
 import api from '@/services/api';
+import { useMessagesStore } from '@/stores/messages'
 
 export function useChat() {
   const messages = ref([]);
@@ -85,10 +86,18 @@ export function useChat() {
    * Callback quand un message est reçu
    */
   const onMessageReceived = (messageData) => {
-    // Vérifier qu'il n'existe pas déjà dans la liste
-    const exists = messages.value.some((m) => m.id === messageData.id);
-    if (!exists) {
-      messages.value.push(messageData);
+    try {
+      // Mettre à jour le store de conversations pour refléter le nouveau message
+      const messagesStore = useMessagesStore()
+      if (typeof messagesStore.handleIncomingMessage === 'function') {
+        messagesStore.handleIncomingMessage(messageData)
+      }
+
+      // Mettre aussi à jour le buffer local de messages (si nécessaire)
+      const exists = messages.value.some((m) => m.id === messageData.id)
+      if (!exists) messages.value.push(messageData)
+    } catch (err) {
+      console.error('Erreur onMessageReceived:', err)
     }
   };
 
