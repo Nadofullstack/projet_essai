@@ -52,6 +52,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/messages/users/list', [MessagesController::class, 'listUsers']);
     
     // Routes avec paramètres ensuite
+    Route::get('/messages/conversation/{userId}', [MessagesController::class, 'getConversation']);
     Route::get('/messages/{id}', [MessagesController::class, 'show']);
     Route::put('/messages/{id}/read', [MessagesController::class, 'markAsRead']);
     Route::delete('/messages/{id}', [MessagesController::class, 'destroy']);

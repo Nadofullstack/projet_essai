@@ -515,10 +515,19 @@ const currentConversation = computed({
 })
 
 // Méthodes
-const selectConversation = (conversation) => {
+const selectConversation = async (conversation) => {
   // ✅ Créer une référence réactive à la conversation sélectionnée
   selectedConversation.value = conversation
   messagesStore.markConversationAsRead(conversation.id)
+  
+  // ✅ Charger les messages de la conversation
+  await messagesStore.fetchConversationMessages(conversation.id)
+  
+  // ✅ Mettre à jour la référence avec les messages chargés
+  const updatedConversation = messagesStore.conversations.find(c => c.id === conversation.id)
+  if (updatedConversation) {
+    selectedConversation.value = updatedConversation
+  }
   
   // ✅ Watcher pour synchroniser les changements
   watch(

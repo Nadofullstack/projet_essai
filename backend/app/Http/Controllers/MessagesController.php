@@ -247,6 +247,71 @@ class MessagesController extends Controller
     }
 
     /**
+     * Obtenir l'historique d'une conversation avec un utilisateur spécifique
+     */
+    public function getConversation($userId): JsonResponse
+    {
+        try {
+            $currentUser = Auth::user();
+
+            // Vérifier que l'utilisateur existe
+            $otherUser = User::find($userId);
+            if (!$otherUser) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Utilisateur non trouvé'
+                ], 404);
+            }
+
+            // Obtenir tous les messages de la conversation (dans les deux directions)
+            $messages = Messages::with(['sender', 'receiver'])
+                ->where(function ($query) use ($currentUser, $userId) {
+                    $query->where(function ($q) use ($currentUser, $userId) {
+                        $q->where('sender_id', $currentUser->id)
+                          ->where('receiver_id', $userId);
+                    })
+                    ->orWhere(function ($q) use ($currentUser, $userId) {
+                        $q->where('sender_id', $userId)
+                          ->where('receiver_id', $currentUser->id);
+                    });
+                })
+                ->orderBy('created_at', 'asc')
+                ->get()
+                ->map(function ($message) use ($currentUser) {
+                    return [
+                        'id' => $message->id,
+                        'content' => $message->content,
+                        'type' => $message->type ?? 'text',
+                        'created_at' => $message->created_at,
+                        'sender_id' => $message->sender_id,
+                        'receiver_id' => $message->receiver_id,
+                        'is_read' => (bool) $message->is_read,
+                        'isSender' => $message->sender_id === $currentUser->id,
+                        'status' => $message->is_read ? 'read' : 'sent'
+                    ];
+                });
+
+            // Marquer les messages reçus comme lus
+            Messages::where('receiver_id', $currentUser->id)
+                ->where('sender_id', $userId)
+                ->where('is_read', false)
+                ->update(['is_read' => true]);
+
+            return response()->json([
+                'success' => true,
+                'data' => $messages
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Erreur getConversation: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération de la conversation',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Obtenir la liste de tous les utilisateurs (sauf l'utilisateur courant)
      */
     public function listUsers(Request $request): JsonResponse

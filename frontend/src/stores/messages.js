@@ -73,6 +73,43 @@ export const useMessagesStore = defineStore('messages', () => {
     }
   }
 
+  const fetchConversationMessages = async (userId) => {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const response = await api.get(`/messages/conversation/${userId}`)
+      const messagesData = response.data.data || response.data.messages || []
+      
+      // Trouver la conversation et mettre à jour les messages
+      const conversation = conversations.value.find(c => c.id === userId)
+      if (conversation) {
+        conversation.messages = messagesData.map(msg => ({
+          id: msg.id,
+          content: msg.content,
+          time: new Date(msg.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+          isSender: msg.isSender,
+          status: msg.status || 'read',
+          isRead: msg.is_read || msg.isRead || false
+        }))
+      }
+      
+      return conversation
+    } catch (err) {
+      console.error('Erreur fetchConversationMessages:', err)
+      error.value = err.response?.data?.message || 'Erreur lors du chargement des messages'
+      
+      // Fallback: ne pas charger de messages
+      const conversation = conversations.value.find(c => c.id === userId)
+      if (conversation) {
+        conversation.messages = []
+      }
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   const fetchConversations = async () => {
     loading.value = true
     error.value = null
@@ -541,13 +578,13 @@ export const useMessagesStore = defineStore('messages', () => {
     // Actions
     fetchConversations,
     fetchAvailableUsers,
+    fetchConversationMessages,
     sendMessage,
     createNewConversation,
     markConversationAsRead,
     deleteConversation,
     searchUsers,
-    startConversationWithUser
-    ,
+    startConversationWithUser,
     handleIncomingMessage,
     setCurrentUser
   }
