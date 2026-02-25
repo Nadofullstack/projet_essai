@@ -2,58 +2,71 @@
 import axios from 'axios'
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-// Création d'une instance axios avec configuration par défaut
+// Création d'une instance axios
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 5000, // Réduit à 5 secondes pour éviter les lenteurs
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
   }
 })
 
-// Intercepteur pour ajouter le token d'authentification
+// Fonction pour obtenir un token (authentification normale)
+const getToken = () => {
+  return localStorage.getItem('auth_token')
+}
+
+// Fonction pour se connecter (à appeler depuis le composant Login)
+export const login = async (credentials) => {
+  try {
+    const response = await api.post('/auth/login', credentials)
+    if (response.data.token) {
+      localStorage.setItem('auth_token', response.data.token)
+      localStorage.setItem('user', JSON.stringify(response.data.user))
+      return { success: true, data: response.data }
+    }
+    return { success: false, error: 'Pas de token reçu' }
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error.response?.data?.message || 'Erreur de connexion'
+    }
+  }
+}
+
+// Intercepteur pour ajouter le token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('auth_token')
+    const token = getToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
   },
-  (error) => {
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
-// Intercepteur pour gérer les erreurs d'authentification
+// Intercepteur pour gérer les erreurs
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      const token = localStorage.getItem('auth_token')
+      console.error('Erreur 401 - Non authentifié')
       
-      // Seulement rediriger si c'est un vrai token (pas un demo token)
-      if (token && !token.startsWith('demo-token')) {
+      // Ne pas rediriger si c'est une requête de login
+      if (!error.config.url.includes('/auth/login')) {
         localStorage.removeItem('auth_token')
         localStorage.removeItem('user')
-        // Rediriger vers la page de login
-        if (typeof window !== 'undefined') {
+        
+        if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
           window.location.href = '/login'
         }
-      } else if (!token) {
-        // Pas de token = tenter d'en obtenir un via healthCheck
-        console.warn('⚠️ 401 - Pas de token. Vous devriez vous authentifier.')
-      } else {
-        // Token de démo = continuer en mode démo
-        console.debug('En mode démo avec token de démo')
       }
     }
     return Promise.reject(error)
   }
 )
-
-export default api
 
 // Export des URLs de l'API
 export const API_ENDPOINTS = {
@@ -145,3 +158,9 @@ export const API_ENDPOINTS = {
     STATS: '/calendar/stats'
   }
 }
+
+export default api
+
+
+
+

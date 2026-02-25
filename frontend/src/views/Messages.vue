@@ -1,12 +1,26 @@
 <template>
   <MainLayout>
-    <!-- Server Status Alert -->
-    <div v-if="!serverAvailable" class="bg-yellow-50 border-b-2 border-yellow-300 px-4 py-3">
+    <!-- Message d'erreur du store uniquement -->
+    <div v-if="messagesStore.error" class="bg-red-50 border-b-2 border-red-300 px-4 py-3">
       <div class="max-w-7xl mx-auto flex items-center space-x-3">
-        <span class="material-symbols-outlined text-yellow-600">warning</span>
-        <p class="text-sm text-yellow-800">
-          <strong>Mode démo:</strong> Le serveur n'est pas accessible. Les données affichées sont simulées. Assurez-vous que le serveur Laravel est en cours d'exécution sur <code class="bg-yellow-100 px-2 py-1 rounded">localhost:8000</code>
+        <span class="material-symbols-outlined text-red-600">error</span>
+        <p class="text-sm text-red-800 flex-1">
+          {{ messagesStore.error }}
         </p>
+        <button 
+          v-if="messagesStore.error.includes('Session expirée')"
+          @click="redirectToLogin"
+          class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+        >
+          Se reconnecter
+        </button>
+        <button 
+          v-else
+          @click="retryLoad"
+          class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm"
+        >
+          Réessayer
+        </button>
       </div>
     </div>
 
@@ -62,7 +76,7 @@
                   @click="selectUserAndStartConversation(user)"
                   class="p-3 border-b border-gray-100 cursor-pointer hover:bg-green-50 transition-colors flex items-center space-x-3"
                 >
-                  <img :src="user.profile_picture || `https://picsum.photos/seed/${user.name}/50/50.jpg`" :alt="user.name" class="w-8 h-8 rounded-full">
+                  <img :src="user.profile_picture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.email}`" :alt="user.name" class="w-8 h-8 rounded-full">
                   <div class="flex-1 min-w-0">
                     <p class="font-medium text-gray-900 truncate">{{ user.name }}</p>
                     <p class="text-xs text-gray-500 truncate">{{ user.email }}</p>
@@ -73,7 +87,21 @@
             </div>
           </div>
           
-          <div class="max-h-96 lg:max-h-full overflow-y-auto">
+          <!-- État de chargement -->
+          <div v-if="messagesStore.loading && !conversations.length" class="p-8 text-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+            <p class="text-gray-500 mt-2">Chargement des conversations...</p>
+          </div>
+          
+          <!-- Aucune conversation -->
+          <div v-else-if="!messagesStore.loading && conversations.length === 0" class="p-8 text-center">
+            <span class="material-symbols-outlined text-4xl text-gray-400">chat</span>
+            <p class="text-gray-500 mt-2">Aucune conversation</p>
+            <p class="text-sm text-gray-400 mt-1">Recherchez des utilisateurs pour commencer</p>
+          </div>
+          
+          <!-- Liste des conversations -->
+          <div v-else class="overflow-y-auto" style="max-height: calc(100vh - 300px);">
             <div 
               v-for="conversation in filteredConversations"
               :key="conversation.id"
@@ -85,7 +113,7 @@
             >
               <div class="flex items-center space-x-3">
                 <div class="relative">
-                  <img :src="conversation.avatar" :alt="conversation.name" class="w-12 h-12 rounded-full">
+                  <img :src="conversation.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${conversation.name}`" :alt="conversation.name" class="w-12 h-12 rounded-full">
                   <span v-if="conversation.isOnline" class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></span>
                 </div>
                 <div class="flex-1 min-w-0">
@@ -93,7 +121,7 @@
                     <h3 class="font-semibold text-gray-900 truncate">{{ conversation.name }}</h3>
                     <span class="text-xs text-gray-500">{{ conversation.time }}</span>
                   </div>
-                  <p class="text-sm text-gray-600 truncate">{{ conversation.lastMessage }}</p>
+                  <p class="text-sm text-gray-600 truncate">{{ conversation.lastMessage || 'Cliquez pour commencer à discuter' }}</p>
                 </div>
                 <div v-if="conversation.unreadCount > 0" class="bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                   {{ conversation.unreadCount }}
@@ -119,7 +147,7 @@
                 >
                   <span class="material-symbols-outlined">arrow_back</span>
                 </button>
-                <img :src="selectedConversation.avatar" :alt="selectedConversation.name" class="w-10 h-10 rounded-full">
+                <img :src="selectedConversation.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedConversation.name}`" :alt="selectedConversation.name" class="w-10 h-10 rounded-full">
                 <div>
                   <h3 class="font-semibold text-gray-900">{{ selectedConversation.name }}</h3>
                   <p class="text-sm text-gray-500">{{ selectedConversation.isOnline ? 'En ligne' : 'Hors ligne' }}</p>
@@ -171,7 +199,7 @@
               >
                 <!-- Avatar pour messages reçus -->
                 <div v-if="!message.isSender" class="flex items-end mr-2">
-                  <img :src="selectedConversation.avatar" :alt="selectedConversation.name" class="w-8 h-8 rounded-full">
+                  <img :src="selectedConversation.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedConversation.name}`" :alt="selectedConversation.name" class="w-8 h-8 rounded-full">
                 </div>
 
                 <!-- Bulle de message -->
@@ -271,188 +299,188 @@
   <!-- Call Modal -->
   <transition name="call-modal" appear>
     <div v-if="showCallModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-      <!-- Call Header -->
-      <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
-        <div class="text-center">
-          <div class="relative inline-block mb-4">
-            <img 
-              :src="selectedConversation?.avatar" 
-              :alt="selectedConversation?.name" 
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        <!-- Call Header -->
+        <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
+          <div class="text-center">
+            <div class="relative inline-block mb-4">
+              <img 
+                :src="selectedConversation?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedConversation?.name}`" 
+                :alt="selectedConversation?.name" 
+                :class="[
+                  'w-24 h-24 rounded-full border-4',
+                  callType === 'video' && !isVideoOn ? 'border-red-500' : 'border-white'
+                ]"
+              >
+              <!-- Icône caméra désactivée -->
+              <div v-if="callType === 'video' && !isVideoOn" class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full">
+                <span class="material-symbols-outlined text-white text-3xl">videocam_off</span>
+              </div>
+              <!-- Indicateur de statut d'appel -->
+              <div v-if="callStatus === 'calling'" class="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+                <div class="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full call-indicator">
+                  Appel en cours...
+                </div>
+              </div>
+              <div v-if="callStatus === 'connected'" class="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
+                <div class="bg-green-500 text-white text-xs px-2 py-1 rounded-full flex items-center space-x-1">
+                  <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                  <span>{{ formatCallDuration(callDuration) }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <h3 class="text-xl font-semibold mb-1">{{ selectedConversation?.name }}</h3>
+            <p class="text-blue-100">
+              {{ callStatusText }}
+            </p>
+            
+            <!-- Afficher les erreurs vidéo -->
+            <p v-if="videoError" class="text-red-300 text-sm mt-2">
+              ⚠️ {{ videoError }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Video Area for Video Calls -->
+        <div v-if="callType === 'video' && callStatus === 'connected'" class="relative bg-black">
+          <!-- Remote Video (Main) -->
+          <div class="aspect-video relative">
+            <video 
+              ref="remoteVideoRef"
+              class="w-full h-full object-cover"
+              autoplay
+              playsinline
+              muted
+            ></video>
+            <!-- Placeholder if no remote video -->
+            <div v-if="!remoteVideoStream" class="absolute inset-0 flex items-center justify-center bg-gray-800">
+              <div class="w-32 h-32 rounded-full bg-gray-600 flex items-center justify-center">
+                <span class="text-4xl text-white">{{ selectedConversation?.name?.charAt(0) || 'U' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Local Video (Small window) -->
+          <div class="absolute top-4 right-4 w-24 h-32 rounded-lg overflow-hidden border-2 border-white shadow-lg">
+            <video 
+              ref="localVideoRef"
+              class="w-full h-full object-cover"
+              autoplay
+              playsinline
+              muted
+            ></video>
+            <!-- Placeholder if video disabled -->
+            <div v-if="!isVideoOn" class="absolute inset-0 bg-gray-800 flex items-center justify-center">
+              <div class="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                <span class="text-white text-sm">{{ selectedConversation?.name?.charAt(0) || 'U' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Call Controls -->
+        <div class="p-8">
+          <!-- Contrôles pour appel entrant -->
+          <div v-if="callStatus === 'ringing'" class="flex justify-center space-x-6 mb-8">
+            <button 
+              @click="rejectCall"
+              class="w-16 h-16 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-all"
+            >
+              <span class="material-symbols-outlined text-2xl">call_end</span>
+            </button>
+            <button 
+              @click="acceptCall"
+              class="w-16 h-16 bg-green-500 text-white rounded-full flex items-center justify-center hover:bg-green-600 transition-all"
+            >
+              <span class="material-symbols-outlined text-2xl">call</span>
+            </button>
+          </div>
+
+          <!-- Contrôles pour appel en cours -->
+          <div v-if="callStatus === 'calling' || callStatus === 'connected'" class="flex justify-center space-x-6 mb-8">
+            <!-- Bouton Muet -->
+            <button 
+              @click="toggleMute"
               :class="[
-                'w-24 h-24 rounded-full border-4',
-                callType === 'video' && !isVideoOn ? 'border-red-500' : 'border-white'
+                'w-16 h-16 rounded-full flex items-center justify-center transition-all',
+                isMuted 
+                  ? 'bg-red-500 text-white' 
+                  : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
               ]"
             >
-            <!-- Icône caméra désactivée -->
-            <div v-if="callType === 'video' && !isVideoOn" class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-full">
-              <span class="material-symbols-outlined text-white text-3xl">videocam_off</span>
-            </div>
-            <!-- Indicateur de statut d'appel -->
-            <div v-if="callStatus === 'calling'" class="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
-              <div class="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full call-indicator">
-                Appel en cours...
-              </div>
-            </div>
-            <div v-if="callStatus === 'connected'" class="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
-              <div class="bg-green-500 text-white text-xs px-2 py-1 rounded-full flex items-center space-x-1">
-                <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
-                <span>{{ formatCallDuration(callDuration) }}</span>
-              </div>
-            </div>
-          </div>
-          
-          <h3 class="text-xl font-semibold mb-1">{{ selectedConversation?.name }}</h3>
-          <p class="text-blue-100">
-            {{ callStatusText }}
-          </p>
-          
-          <!-- Afficher les erreurs vidéo -->
-          <p v-if="videoError" class="text-red-300 text-sm mt-2">
-            ⚠️ {{ videoError }}
-          </p>
-        </div>
-      </div>
+              <span class="material-symbols-outlined text-2xl">
+                {{ isMuted ? 'mic_off' : 'mic' }}
+              </span>
+            </button>
 
-      <!-- Video Area for Video Calls -->
-      <div v-if="callType === 'video' && callStatus === 'connected'" class="relative bg-black">
-        <!-- Remote Video (Main) -->
-        <div class="aspect-video relative">
-          <video 
-            ref="remoteVideoRef"
-            class="w-full h-full object-cover"
-            autoplay
-            playsinline
-            muted
-          ></video>
-          <!-- Placeholder if no remote video -->
-          <div v-if="!remoteVideoStream" class="absolute inset-0 flex items-center justify-center bg-gray-800">
-            <div class="w-32 h-32 rounded-full bg-gray-600 flex items-center justify-center">
-              <span class="text-4xl text-white">{{ selectedConversation?.name?.charAt(0) || 'U' }}</span>
-            </div>
-          </div>
-        </div>
+            <!-- Bouton Haut-parleur -->
+            <button 
+              @click="toggleSpeaker"
+              :class="[
+                'w-16 h-16 rounded-full flex items-center justify-center transition-all',
+                !isSpeakerOn 
+                  ? 'bg-red-500 text-white' 
+                  : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+              ]"
+            >
+              <span class="material-symbols-outlined text-2xl">
+                {{ isSpeakerOn ? 'volume_up' : 'volume_off' }}
+              </span>
+            </button>
 
-        <!-- Local Video (Small window) -->
-        <div class="absolute top-4 right-4 w-24 h-32 rounded-lg overflow-hidden border-2 border-white shadow-lg">
-          <video 
-            ref="localVideoRef"
-            class="w-full h-full object-cover"
-            autoplay
-            playsinline
-            muted
-          ></video>
-          <!-- Placeholder if video disabled -->
-          <div v-if="!isVideoOn" class="absolute inset-0 bg-gray-800 flex items-center justify-center">
-            <div class="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
-              <span class="text-white text-sm">{{ selectedConversation?.name?.charAt(0) || 'U' }}</span>
-            </div>
+            <!-- Bouton Raccrocher -->
+            <button 
+              @click="endCall"
+              class="w-16 h-16 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-all"
+            >
+              <span class="material-symbols-outlined text-2xl">call_end</span>
+            </button>
+          </div>
+
+          <!-- Boutons supplémentaires pour appel vidéo -->
+          <div v-if="callType === 'video' && callStatus === 'connected'" class="flex justify-center space-x-4">
+            <button 
+              @click="toggleVideo"
+              :class="[
+                'w-12 h-12 rounded-full flex items-center justify-center transition-all',
+                !isVideoOn 
+                  ? 'bg-red-500 text-white' 
+                  : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+              ]"
+            >
+              <span class="material-symbols-outlined">
+                {{ isVideoOn ? 'videocam' : 'videocam_off' }}
+              </span>
+            </button>
+            <button 
+              @click="switchCamera"
+              class="w-12 h-12 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center hover:bg-gray-300 transition-all"
+            >
+              <span class="material-symbols-outlined">switch_camera</span>
+            </button>
           </div>
         </div>
       </div>
-
-      <!-- Call Controls -->
-      <div class="p-8">
-        <!-- Contrôles pour appel entrant -->
-        <div v-if="callStatus === 'ringing'" class="flex justify-center space-x-6 mb-8">
-          <button 
-            @click="rejectCall"
-            class="w-16 h-16 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-all"
-          >
-            <span class="material-symbols-outlined text-2xl">call_end</span>
-          </button>
-          <button 
-            @click="acceptCall"
-            class="w-16 h-16 bg-green-500 text-white rounded-full flex items-center justify-center hover:bg-green-600 transition-all"
-          >
-            <span class="material-symbols-outlined text-2xl">call</span>
-          </button>
-        </div>
-
-        <!-- Contrôles pour appel en cours -->
-        <div v-if="callStatus === 'calling' || callStatus === 'connected'" class="flex justify-center space-x-6 mb-8">
-          <!-- Bouton Muet -->
-          <button 
-            @click="toggleMute"
-            :class="[
-              'w-16 h-16 rounded-full flex items-center justify-center transition-all',
-              isMuted 
-                ? 'bg-red-500 text-white' 
-                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-            ]"
-          >
-            <span class="material-symbols-outlined text-2xl">
-              {{ isMuted ? 'mic_off' : 'mic' }}
-            </span>
-          </button>
-
-          <!-- Bouton Haut-parleur -->
-          <button 
-            @click="toggleSpeaker"
-            :class="[
-              'w-16 h-16 rounded-full flex items-center justify-center transition-all',
-              !isSpeakerOn 
-                ? 'bg-red-500 text-white' 
-                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-            ]"
-          >
-            <span class="material-symbols-outlined text-2xl">
-              {{ isSpeakerOn ? 'volume_up' : 'volume_off' }}
-            </span>
-          </button>
-
-          <!-- Bouton Raccrocher -->
-          <button 
-            @click="endCall"
-            class="w-16 h-16 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600 transition-all"
-          >
-            <span class="material-symbols-outlined text-2xl">call_end</span>
-          </button>
-        </div>
-
-        <!-- Boutons supplémentaires pour appel vidéo -->
-        <div v-if="callType === 'video' && callStatus === 'connected'" class="flex justify-center space-x-4">
-          <button 
-            @click="toggleVideo"
-            :class="[
-              'w-12 h-12 rounded-full flex items-center justify-center transition-all',
-              !isVideoOn 
-                ? 'bg-red-500 text-white' 
-                : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-            ]"
-          >
-            <span class="material-symbols-outlined">
-              {{ isVideoOn ? 'videocam' : 'videocam_off' }}
-            </span>
-          </button>
-          <button 
-            @click="switchCamera"
-            class="w-12 h-12 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center hover:bg-gray-300 transition-all"
-          >
-            <span class="material-symbols-outlined">switch_camera</span>
-          </button>
-        </div>
-      </div>
-    </div>
     </div>
   </transition>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMessagesStore } from '@/stores/messages'
 import { useDashboardStore } from '@/stores/dashboard'
-import { useAppelsStore } from '@/stores/appels'
 import MainLayout from '@/components/Dashboard/Layout/MainLayout.vue'
 
+const router = useRouter()
 const messagesStore = useMessagesStore()
-const appelsStore = useAppelsStore()
+const dashboardStore = useDashboardStore()
 
 // État local
 const searchQuery = ref('')
 const selectedConversation = ref(null)
 const newMessage = ref('')
-const serverAvailable = ref(true)
 
 // État de la recherche utilisateur
 const userSearchQuery = ref('')
@@ -461,14 +489,14 @@ const showUserSearchResults = ref(false)
 
 // État des appels
 const showCallModal = ref(false)
-const callType = ref('audio') // 'audio' ou 'video'
-const callStatus = ref('idle') // 'idle', 'calling', 'ringing', 'connected', 'ended'
+const callType = ref('audio')
+const callStatus = ref('idle')
 const callDuration = ref(0)
 const callTimer = ref(null)
 const isMuted = ref(false)
 const isSpeakerOn = ref(true)
 const isVideoOn = ref(true)
-const cameraFacing = ref('front') // 'front' ou 'back'
+const cameraFacing = ref('front')
 
 // État de la vidéo
 const localVideoStream = ref(null)
@@ -478,16 +506,27 @@ const remoteVideoRef = ref(null)
 const videoError = ref('')
 const isVideoAvailable = ref(true)
 
-// Données du store
+// Computed
 const conversations = computed(() => messagesStore.conversations)
 
-// Computed
 const filteredConversations = computed(() => {
   if (!searchQuery.value) return conversations.value
   return conversations.value.filter(conv => 
     conv.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-    conv.lastMessage.toLowerCase().includes(searchQuery.value.toLowerCase())
+    (conv.lastMessage && conv.lastMessage.toLowerCase().includes(searchQuery.value.toLowerCase()))
   )
+})
+
+const currentConversation = computed({
+  get() {
+    if (selectedConversation.value) {
+      return messagesStore.conversations.find(c => c.id === selectedConversation.value.id) || selectedConversation.value
+    }
+    return null
+  },
+  set(newValue) {
+    selectedConversation.value = newValue
+  }
 })
 
 const callStatusText = computed(() => {
@@ -500,51 +539,61 @@ const callStatusText = computed(() => {
   }
 })
 
-// ✅ Computed pour synchroniser la conversation sélectionnée avec le store
-const currentConversation = computed({
-  get() {
-    if (selectedConversation.value) {
-      // Récupérer la version à jour depuis le store
-      return messagesStore.conversations.find(c => c.id === selectedConversation.value.id) || selectedConversation.value
-    }
-    return null
-  },
-  set(newValue) {
-    selectedConversation.value = newValue
-  }
-})
-
 // Méthodes
+const redirectToLogin = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user_id')
+  router.push('/login')
+}
+
+const retryLoad = () => {
+  messagesStore.error = null
+  loadInitialData()
+}
+
+const loadInitialData = async () => {
+  // Vérifier si token présent
+  const token = localStorage.getItem('token')
+  if (!token) {
+    messagesStore.error = 'Vous n\'êtes pas connecté'
+    return
+  }
+
+  try {
+    // Charger les données dashboard si besoin
+    if (!dashboardStore.currentUser?.id) {
+      await dashboardStore.fetchDashboardData()
+    }
+    
+    // Définir l'utilisateur courant
+    if (dashboardStore.currentUser?.id) {
+      messagesStore.setCurrentUser(dashboardStore.currentUser)
+    }
+    
+    // Charger les conversations et utilisateurs
+    await Promise.all([
+      messagesStore.fetchConversations(),
+      messagesStore.fetchAvailableUsers()
+    ])
+  } catch (error) {
+    console.error('Erreur chargement initial:', error)
+    if (error.response?.status === 401) {
+      messagesStore.error = 'Session expirée. Veuillez vous reconnecter.'
+    }
+  }
+}
+
 const selectConversation = async (conversation) => {
-  // ✅ Créer une référence réactive à la conversation sélectionnée
   selectedConversation.value = conversation
   messagesStore.markConversationAsRead(conversation.id)
   
-  // ✅ Charger les messages de la conversation
   await messagesStore.fetchConversationMessages(conversation.id)
   
-  // ✅ Mettre à jour la référence avec les messages chargés
   const updatedConversation = messagesStore.conversations.find(c => c.id === conversation.id)
   if (updatedConversation) {
     selectedConversation.value = updatedConversation
   }
   
-  // ✅ Watcher pour synchroniser les changements
-  watch(
-    () => messagesStore.conversations,
-    (newConversations) => {
-      if (selectedConversation.value) {
-        // Mettre à jour la conversation sélectionnée avec les derniers changements
-        const updated = newConversations.find(c => c.id === selectedConversation.value.id)
-        if (updated) {
-          selectedConversation.value = updated
-        }
-      }
-    },
-    { deep: true }
-  )
-  
-  // Scroll to bottom of messages on mobile
   nextTick(() => {
     const messagesContainer = document.querySelector('.overflow-y-auto')
     if (messagesContainer) {
@@ -559,17 +608,16 @@ const sendMessage = async () => {
   }
 
   const messageContent = newMessage.value.trim()
-  newMessage.value = '' // Clear input immédiatement
+  newMessage.value = ''
   
   try {
     await messagesStore.sendMessage({
       conversationId: selectedConversation.value.id,
-      receiverId: selectedConversation.value.id, // ID du destinataire
+      receiverId: selectedConversation.value.id,
       content: messageContent,
-      type: 'text' // Type par défaut
+      type: 'text'
     })
     
-    // Scroll to bottom après envoi réussi
     nextTick(() => {
       const messagesContainer = document.querySelector('.overflow-y-auto')
       if (messagesContainer) {
@@ -579,12 +627,12 @@ const sendMessage = async () => {
   } catch (error) {
     console.error('Erreur lors de l\'envoi du message:', error)
     
-    // Afficher l'erreur du store
-    if (messagesStore.error) {
-      // Créer une alerte visible à l'utilisateur
+    if (error.response?.status === 401) {
+      messagesStore.error = 'Session expirée. Veuillez vous reconnecter.'
+    } else if (messagesStore.error) {
       alert(`❌ ${messagesStore.error}`)
     } else {
-      alert('❌ Erreur lors de l\'envoi du message. Veuillez vérifier votre connexion.')
+      alert('❌ Erreur lors de l\'envoi du message')
     }
   }
 }
@@ -593,31 +641,26 @@ const goBackToConversations = () => {
   selectedConversation.value = null
 }
 
-// Recherche utilisateurs avec délai
+// Recherche utilisateurs
 const searchUsersDebounced = (() => {
   let timeoutId = null
-  return async (query) => {
+  return async (event) => {
     clearTimeout(timeoutId)
-    // If empty, show currently available (online) users
+    const query = event?.target?.value || ''
+    
     if (!query) {
-      try {
-        // ensure we have available users loaded
-        await messagesStore.fetchAvailableUsers()
-        userSearchResults.value = messagesStore.availableUsers.filter(u => u.isOnline)
-        showUserSearchResults.value = userSearchResults.value.length > 0
-      } catch (err) {
-        userSearchResults.value = []
-        showUserSearchResults.value = false
-      }
+      userSearchResults.value = messagesStore.availableUsers.filter(u => u.isOnline)
+      showUserSearchResults.value = userSearchResults.value.length > 0
       return
     }
+    
     timeoutId = setTimeout(async () => {
       try {
         const results = await messagesStore.searchUsers(query)
         userSearchResults.value = results
         showUserSearchResults.value = results.length > 0
       } catch (error) {
-        console.error('Erreur lors de la recherche d\'utilisateurs:', error)
+        console.error('Erreur recherche utilisateurs:', error)
         userSearchResults.value = []
         showUserSearchResults.value = false
       }
@@ -632,6 +675,7 @@ const selectUserAndStartConversation = (user) => {
   showUserSearchResults.value = false
 }
 
+// Appels
 const startAudioCall = () => {
   if (selectedConversation.value) {
     callType.value = 'audio'
@@ -639,27 +683,23 @@ const startAudioCall = () => {
     showCallModal.value = true
     startCallTimer()
     
-    // Simuler la connexion après 2 secondes
     setTimeout(() => {
       callStatus.value = 'connected'
     }, 2000)
   }
 }
 
-const startVideoCall = () => {
+const startVideoCall = async () => {
   if (selectedConversation.value) {
     callType.value = 'video'
     callStatus.value = 'calling'
     showCallModal.value = true
     startCallTimer()
     
-    // Accéder à la caméra et au micro
-    initializeVideoCall()
+    await initializeVideoCall()
     
-    // Simuler la connexion après 2 secondes
     setTimeout(() => {
       callStatus.value = 'connected'
-      // Simuler le flux vidéo distant
       simulateRemoteVideo()
     }, 2000)
   }
@@ -683,35 +723,23 @@ const initializeVideoCall = async () => {
     if (localVideoRef.value) {
       localVideoRef.value.srcObject = stream
     }
-    
-    // Gérer le changement de caméra
-    stream.getVideoTracks()[0].onended = () => {
-      console.log('Vidéo locale arrêtée')
-    }
-    
   } catch (error) {
     console.error('Erreur d\'accès à la caméra:', error)
     isVideoAvailable.value = false
     
-    // Messages d'erreur spécifiques selon le type d'erreur
     if (error.name === 'NotFoundError') {
       videoError.value = 'Aucune caméra trouvée sur cet appareil.'
     } else if (error.name === 'NotAllowedError') {
       videoError.value = 'Permission d\'accès à la caméra refusée.'
-    } else if (error.name === 'NotReadableError') {
-      videoError.value = 'La caméra est déjà utilisée par une autre application.'
     } else {
-      videoError.value = 'Erreur d\'accès à la caméra. Passage en appel audio.'
+      videoError.value = 'Erreur d\'accès à la caméra.'
     }
     
-    // Fallback vers appel audio si vidéo échoue
     callType.value = 'audio'
   }
 }
 
 const simulateRemoteVideo = () => {
-  // Simulation d'un flux vidéo distant (dans un vrai app, ce serait WebRTC)
-  // Pour l'instant, on utilise une vidéo placeholder ou on cache l'avatar
   remoteVideoStream.value = 'simulated'
 }
 
@@ -728,29 +756,9 @@ const toggleVideo = () => {
 
 const switchCamera = async () => {
   if (localVideoStream.value) {
-    // Arrêter le flux actuel
     localVideoStream.value.getTracks().forEach(track => track.stop())
-    
     cameraFacing.value = cameraFacing.value === 'front' ? 'back' : 'front'
-    
-    try {
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: cameraFacing.value === 'front' ? 'user' : 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: true
-      })
-      
-      localVideoStream.value = newStream
-      
-      if (localVideoRef.value) {
-        localVideoRef.value.srcObject = newStream
-      }
-    } catch (error) {
-      console.error('Erreur de changement de caméra:', error)
-    }
+    await initializeVideoCall()
   }
 }
 
@@ -765,7 +773,10 @@ const toggleMute = () => {
   }
 }
 
-// Simulation d'appel entrant (pour test)
+const toggleSpeaker = () => {
+  isSpeakerOn.value = !isSpeakerOn.value
+}
+
 const simulateIncomingCall = () => {
   if (selectedConversation.value) {
     callType.value = 'audio'
@@ -774,7 +785,6 @@ const simulateIncomingCall = () => {
   }
 }
 
-// Fonctions pour accepter/refuser un appel entrant
 const acceptCall = () => {
   callStatus.value = 'connected'
   startCallTimer()
@@ -794,16 +804,12 @@ const endCall = () => {
     clearInterval(callTimer.value)
   }
   
-  // Nettoyer les streams vidéo
   if (localVideoStream.value) {
     localVideoStream.value.getTracks().forEach(track => track.stop())
     localVideoStream.value = null
   }
-  if (remoteVideoStream.value) {
-    remoteVideoStream.value = null
-  }
+  remoteVideoStream.value = null
   
-  // Fermer le modal après 1 seconde
   setTimeout(() => {
     showCallModal.value = false
     callStatus.value = 'idle'
@@ -830,32 +836,9 @@ const startCallTimer = () => {
 
 // Chargement initial
 onMounted(async () => {
-  // Vérifier la santé du serveur
-  const { checkServerHealth } = await import('@/services/healthCheck')
-  const health = await checkServerHealth()
-  serverAvailable.value = health.available
+  await loadInitialData()
   
-  if (!health.available) {
-    console.warn('⚠️ Server not available, using demo data')
-  }
-  
-  // Définir l'utilisateur courant pour le store messages (pour gestion des unread etc.)
-  try {
-    const dashboardStore = useDashboardStore()
-    // Si le dashboard n'a pas été initialisé, on peut appeler fetchDashboardData
-    if (!dashboardStore.currentUser || !dashboardStore.currentUser.id) {
-      await dashboardStore.fetchDashboardData()
-    }
-    messagesStore.setCurrentUser(dashboardStore.currentUser)
-  } catch (err) {
-    console.warn('Impossible de récupérer currentUser depuis dashboard store:', err)
-  }
-
-  // Charger les utilisateurs disponibles et conversations
-  messagesStore.fetchAvailableUsers()
-  messagesStore.fetchConversations()
-  
-  // Vérifier la disponibilité des périphériques vidéo
+  // Vérifier disponibilité caméra
   try {
     const devices = await navigator.mediaDevices.enumerateDevices()
     const videoDevices = devices.filter(device => device.kind === 'videoinput')
@@ -866,22 +849,23 @@ onMounted(async () => {
   }
 })
 
-// Watcher pour auto-scroll quand de nouveaux messages arrivent
-watch(() => selectedConversation.value?.messages, (newMessages) => {
-  if (newMessages) {
-    nextTick(() => {
-      const messagesContainer = document.querySelector('.overflow-y-auto')
-      if (messagesContainer) {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight
-      }
-    })
-  }
+// Watcher pour auto-scroll
+watch(() => selectedConversation.value?.messages, () => {
+  nextTick(() => {
+    const messagesContainer = document.querySelector('.overflow-y-auto')
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight
+    }
+  })
 }, { deep: true })
 
-// Nettoyage du timer à la destruction du composant
+// Nettoyage
 onUnmounted(() => {
   if (callTimer.value) {
     clearInterval(callTimer.value)
+  }
+  if (localVideoStream.value) {
+    localVideoStream.value.getTracks().forEach(track => track.stop())
   }
 })
 </script>

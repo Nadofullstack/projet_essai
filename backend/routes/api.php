@@ -50,6 +50,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/messages/unread', [MessagesController::class, 'unread']);
     Route::get('/messages/conversations', [MessagesController::class, 'conversations']);
     Route::get('/messages/users/list', [MessagesController::class, 'listUsers']);
+    Route::get('/messages/users/status', [MessagesController::class, 'getUsersStatus']);
+    Route::post('/messages/user/status', [MessagesController::class, 'updateUserStatus']);
+    Route::delete('/messages/delete-all', [MessagesController::class, 'deleteAllMessages']);
+    Route::delete('/messages/delete-old', [MessagesController::class, 'deleteOldMessages']);
     
     // Routes avec paramètres ensuite
     Route::get('/messages/conversation/{userId}', [MessagesController::class, 'getConversation']);

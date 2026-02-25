@@ -84,6 +84,7 @@ class MessagesController extends Controller
 
         $data = $validator->validated();
         $data['sender_id'] = Auth::id();
+        $data['is_new'] = true; // Marquer comme nouveau message
 
         // Gérer les pièces jointes
         if ($request->hasFile('attachment')) {
@@ -125,7 +126,7 @@ class MessagesController extends Controller
             ], 403);
         }
 
-        $message->update(['is_read' => true]);
+        $message->update(['is_read' => true, 'is_new' => false]);
 
         return response()->json([
             'success' => true,
@@ -167,13 +168,15 @@ class MessagesController extends Controller
         try {
             $user = Auth::user();
             
-            // Obtenir tous les messages de l'utilisateur
+            // Obtenir un sous-ensemble récent des messages de l'utilisateur
+            // Limiter pour éviter des requêtes longues sur de grandes tables
             $messages = Messages::with(['sender', 'receiver'])
                 ->where(function ($query) use ($user) {
                     $query->where('sender_id', $user->id)
                           ->orWhere('receiver_id', $user->id);
                 })
                 ->orderBy('created_at', 'desc')
+                ->limit(500)
                 ->get();
 
             // Grouper par conversation
@@ -320,7 +323,7 @@ class MessagesController extends Controller
         $search = $request->query('search', '');
 
         $query = User::where('id', '!=', $user->id)
-            ->select('id', 'name', 'email', 'profile_picture', 'created_at');
+            ->select('id', 'name', 'email', 'profile_picture', 'online_status', 'last_seen_at', 'created_at');
 
         // Recherche par nom ou email si fourni
         if ($search) {
@@ -336,5 +339,173 @@ class MessagesController extends Controller
             'success' => true,
             'data' => $users
         ]);
+    }
+
+    /**
+     * Supprimer tous les messages "durs" de l'utilisateur
+     * Effectue une suppression permanente (pas soft delete)
+     */
+    public function deleteAllMessages(): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+
+            // Compter les messages avant suppression
+            $totalMessages = Messages::where(function ($query) use ($user) {
+                $query->where('sender_id', $user->id)
+                      ->orWhere('receiver_id', $user->id);
+            })->count();
+
+            // Supprimer définitivement les messages
+            Messages::where(function ($query) use ($user) {
+                $query->where('sender_id', $user->id)
+                      ->orWhere('receiver_id', $user->id);
+            })->forceDelete();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Tous vos {$totalMessages} messages ont été supprimés définitivement",
+                'deleted_count' => $totalMessages
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Erreur deleteAllMessages: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la suppression des messages',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Supprimer les messages "durs" avant une date spécifique
+     * Utile pour nettoyer les anciens messages
+     */
+    public function deleteOldMessages(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'days_old' => 'required|integer|min:1|max:3650',
+                'confirm' => 'required|boolean'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erreur de validation',
+                    'errors' => $validator->messages()
+                ], 422);
+            }
+
+            // Vérification de sécurité - l'utilisateur doit confirmer
+            if (!$request->get('confirm')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Suppression non confirmée'
+                ], 400);
+            }
+
+            $user = Auth::user();
+            $daysOld = $request->get('days_old');
+            $cutoffDate = now()->subDays($daysOld);
+
+            // Compter les messages avant suppression
+            $totalMessages = Messages::where(function ($query) use ($user) {
+                $query->where('sender_id', $user->id)
+                      ->orWhere('receiver_id', $user->id);
+            })
+            ->where('created_at', '<', $cutoffDate)
+            ->count();
+
+            // Supprimer définitivement les anciens messages
+            Messages::where(function ($query) use ($user) {
+                $query->where('sender_id', $user->id)
+                      ->orWhere('receiver_id', $user->id);
+            })
+            ->where('created_at', '<', $cutoffDate)
+            ->forceDelete();
+
+            return response()->json([
+                'success' => true,
+                'message' => "{$totalMessages} anciens messages (de plus de {$daysOld} jours) ont été supprimés définitivement",
+                'deleted_count' => $totalMessages
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Erreur deleteOldMessages: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la suppression des messages',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Obtenir le statut en ligne de tous les utilisateurs
+     */
+    public function getUsersStatus(): JsonResponse
+    {
+        try {
+            $users = User::select('id', 'name', 'online_status', 'last_seen_at')
+                ->orderBy('name')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $users
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Erreur getUsersStatus: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la récupération des statuts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Mettre à jour le statut en ligne de l'utilisateur courant
+     */
+    public function updateUserStatus(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'online_status' => 'required|in:online,offline'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erreur de validation',
+                    'errors' => $validator->messages()
+                ], 422);
+            }
+
+            $user = Auth::user();
+            $status = $request->get('online_status');
+
+            if ($status === 'online') {
+                $user->markAsOnline();
+            } else {
+                $user->markAsOffline();
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Statut mis à jour avec succès',
+                'data' => [
+                    'online_status' => $user->online_status,
+                    'last_seen_at' => $user->last_seen_at
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Erreur updateUserStatus: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur lors de la mise à jour du statut',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

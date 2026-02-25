@@ -22,6 +22,9 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'online_status',
+        'last_seen_at',
+        'profile_picture',
     ];
 
     /**
@@ -44,6 +47,42 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'last_seen_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Relations
+     */
+    public function sentMessages()
+    {
+        return $this->hasMany(Messages::class, 'sender_id');
+    }
+
+    public function receivedMessages()
+    {
+        return $this->hasMany(Messages::class, 'receiver_id');
+    }
+
+    /**
+     * Marquer l'utilisateur comme en ligne
+     */
+    public function markAsOnline()
+    {
+        $this->update([
+            'online_status' => 'online',
+            'last_seen_at' => now()
+        ]);
+    }
+
+    /**
+     * Marquer l'utilisateur comme hors ligne
+     */
+    public function markAsOffline()
+    {
+        $this->update([
+            'online_status' => 'offline',
+            'last_seen_at' => now()
+        ]);
     }
 }

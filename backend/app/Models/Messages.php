@@ -5,9 +5,12 @@ namespace App\Models;
 use App\Events\MessageSent;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Messages extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'content',
         'type', // text, image, file, audio
@@ -17,25 +20,37 @@ class Messages extends Model
         'attachment_type',
         'attachment_path',
         'is_read',
+        'is_new',
         'parent_id' // pour les réponses
     ];
 
     protected $casts = [
         'has_attachment' => 'boolean',
         'is_read' => 'boolean',
+        'is_new' => 'boolean',
         'created_at' => 'datetime',
-        'updated_at' => 'datetime'
+        'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
     ];
 
-    protected $dispatchesEvents = [
-        'created' => MessageSent::class,
-    ];
-
-    public function user()
+    /**     * Dispatch l'événement MessageSent après la création d'un message
+     */    protected static function booted()
     {
-        return $this->belongsTo(User::class);
+        static::created(function ($message) {
+            event(new MessageSent($message));
+        });
     }
 
+     /**
+     * Générer une clé de conversation unique pour deux utilisateurs
+     * Peu importe qui est l'expéditeur ou le destinataire
+     */    public function getConversationKeyAttribute(): string
+    {
+        $ids = [$this->sender_id, $this->receiver_id];
+        sort($ids);
+        return implode('_', $ids);
+    }
+ 
     /**
      * Obtenir l'expéditeur du message
      */
