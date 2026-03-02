@@ -4,7 +4,10 @@
 
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Normalize to remove trailing '/api' if user accidentally set it
+const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_BASE_URL = rawApiUrl.replace(/\/api\/?$/,'')
+
 
 export async function checkServerHealth() {
   try {

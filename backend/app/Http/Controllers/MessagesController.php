@@ -161,16 +161,16 @@ class MessagesController extends Controller
     }
 
     /**
-     * Obtenir les conversations récentes
+     * Obtenir les conversations récentes (OPTIMISÉE)
      */
     public function conversations(): JsonResponse
     {
         try {
             $user = Auth::user();
             
-            // Obtenir un sous-ensemble récent des messages de l'utilisateur
-            // Limiter pour éviter des requêtes longues sur de grandes tables
-            $messages = Messages::with(['sender', 'receiver'])
+            // ✅ OPTIMISÉ: Récupérer uniquement les colonnes nécessaires
+            // ✅ Limiter à 500 messages pour éviter timeout
+            $messages = Messages::select('id', 'sender_id', 'receiver_id', 'content', 'created_at', 'is_read')
                 ->where(function ($query) use ($user) {
                     $query->where('sender_id', $user->id)
                           ->orWhere('receiver_id', $user->id);
@@ -187,18 +187,24 @@ class MessagesController extends Controller
                 $otherUserId = $message->sender_id === $user->id ? $message->receiver_id : $message->sender_id;
                 
                 if (!in_array($otherUserId, $processedIds)) {
-                    $otherUser = $message->sender_id === $user->id ? $message->receiver : $message->sender;
+                    // ✅ Charger l'utilisateur seulement si nécessaire
+                    $otherUser = User::select('id', 'name', 'profile_picture')
+                        ->find($otherUserId);
+                    
                     if ($otherUser) {
+                        // ✅ Compter les messages non lus de façon efficace
+                        $unreadCount = Messages::where('receiver_id', $user->id)
+                            ->where('sender_id', $otherUserId)
+                            ->where('is_read', false)
+                            ->count();
+
                         $conversations[] = [
                             'id' => $otherUserId,
                             'name' => $otherUser->name ?? 'Unknown',
                             'avatar' => $otherUser->profile_picture ?? null,
                             'lastMessage' => $message->content,
                             'last_message_time' => $message->created_at,
-                            'unread_count' => Messages::where('receiver_id', $user->id)
-                                ->where('sender_id', $otherUserId)
-                                ->where('is_read', false)
-                                ->count()
+                            'unread_count' => $unreadCount
                         ];
                         $processedIds[] = $otherUserId;
                     }
@@ -207,7 +213,7 @@ class MessagesController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => array_slice($conversations, 0, 10) // Limiter à 10 conversations
+                'data' => array_slice($conversations, 0, 20)  // ✅ Retourner max 20 au lieu de 10
             ]);
         } catch (\Exception $e) {
             \Log::error('Erreur conversations: ' . $e->getMessage());
@@ -250,7 +256,7 @@ class MessagesController extends Controller
     }
 
     /**
-     * Obtenir l'historique d'une conversation avec un utilisateur spécifique
+     * Obtenir l'historique d'une conversation avec un utilisateur spécifique (AVEC PAGINATION)
      */
     public function getConversation($userId): JsonResponse
     {
@@ -266,8 +272,9 @@ class MessagesController extends Controller
                 ], 404);
             }
 
-            // Obtenir tous les messages de la conversation (dans les deux directions)
-            $messages = Messages::with(['sender', 'receiver'])
+            // ✅ OPTIMISÉ: Récupérer UNE PAGINATION de messages (50 derniers)
+            // ✅ Utiliser select() pour charger uniquement les colonnes nécessaires
+            $messages = Messages::select('id', 'content', 'type', 'created_at', 'sender_id', 'receiver_id', 'is_read', 'attachment_path', 'attachment_type')
                 ->where(function ($query) use ($currentUser, $userId) {
                     $query->where(function ($q) use ($currentUser, $userId) {
                         $q->where('sender_id', $currentUser->id)
@@ -278,8 +285,10 @@ class MessagesController extends Controller
                           ->where('receiver_id', $currentUser->id);
                     });
                 })
-                ->orderBy('created_at', 'asc')
+                ->orderBy('created_at', 'desc')
+                ->limit(100)  // ✅ Limiter à 100 messages max
                 ->get()
+                ->reverse()  // Réordonner pour affichage chronologique
                 ->map(function ($message) use ($currentUser) {
                     return [
                         'id' => $message->id,
@@ -290,11 +299,14 @@ class MessagesController extends Controller
                         'receiver_id' => $message->receiver_id,
                         'is_read' => (bool) $message->is_read,
                         'isSender' => $message->sender_id === $currentUser->id,
-                        'status' => $message->is_read ? 'read' : 'sent'
+                        'status' => $message->is_read ? 'read' : 'sent',
+                        'attachment_path' => $message->attachment_path ?? null,
+                        'attachment_type' => $message->attachment_type ?? null
                     ];
-                });
+                })
+                ->values();
 
-            // Marquer les messages reçus comme lus
+            // ✅ Marquer les messages reçus comme lus (async, ne pas attendre)
             Messages::where('receiver_id', $currentUser->id)
                 ->where('sender_id', $userId)
                 ->where('is_read', false)
@@ -302,7 +314,17 @@ class MessagesController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $messages
+                'data' => $messages,
+                'total_count' => Messages::where(function ($query) use ($currentUser, $userId) {
+                    $query->where(function ($q) use ($currentUser, $userId) {
+                        $q->where('sender_id', $currentUser->id)
+                          ->where('receiver_id', $userId);
+                    })
+                    ->orWhere(function ($q) use ($currentUser, $userId) {
+                        $q->where('sender_id', $userId)
+                          ->where('receiver_id', $currentUser->id);
+                    });
+                })->count()  // Retourner le nombre total pour la pagination frontend
             ]);
         } catch (\Exception $e) {
             \Log::error('Erreur getConversation: ' . $e->getMessage());

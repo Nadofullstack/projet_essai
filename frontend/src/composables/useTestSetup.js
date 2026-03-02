@@ -17,9 +17,10 @@ export function useTestSetup() {
     const existingToken = localStorage.getItem('auth_token')
     if (!existingToken) {
       try {
-        const response = await axios.get(
-          `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/auth/test-token`
-        )
+        // build url using same normalization as services
+        const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/api\/?$/,'')
+        const response = await axios.get(`${baseUrl}/api/auth/test-token`)
+
 
         if (response.data.success) {
           const { token, user } = response.data

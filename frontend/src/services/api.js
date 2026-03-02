@@ -1,11 +1,14 @@
 // Configuration de l'API
 import axios from 'axios'
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Retrieve base URL from env and strip any trailing '/api' to avoid double prefix
+const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_BASE_URL = rawApiUrl.replace(/\/api\/?$/,'')
+
 
 // Création d'une instance axios
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 45000,  // ✅ AUGMENTÉ: 45 secondes au lieu de 15 (pagination + chargement lent)
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'

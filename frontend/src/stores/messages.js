@@ -87,8 +87,14 @@ export const useMessagesStore = defineStore('messages', () => {
     error.value = null
     
     try {
+      console.log(`📡 Chargement des messages avec l'utilisateur ${userId}...`)
+      
+      // ✅ API retourne maintenant 100 derniers messages (paginé)
       const response = await api.get(`/messages/conversation/${userId}`)
       const messagesData = response.data.data || response.data.messages || []
+      const totalCount = response.data.total_count || messagesData.length
+      
+      console.log(`✅ ${messagesData.length} messages chargés (total: ${totalCount})`)
       
       const conversation = conversations.value.find(c => c.id === userId)
       if (conversation) {
@@ -98,8 +104,10 @@ export const useMessagesStore = defineStore('messages', () => {
           time: new Date(msg.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
           isSender: msg.isSender,
           status: msg.status || 'read',
-          isRead: msg.is_read || msg.isRead || false
+          isRead: msg.is_read || msg.isRead || false,
+          type: msg.type || 'text'
         }))
+        conversation.totalMessages = totalCount  // ✅ Pour savoir si y'a d'autres messages
       }
       
       return conversation
@@ -108,6 +116,8 @@ export const useMessagesStore = defineStore('messages', () => {
       
       if (err.response?.status === 401) {
         error.value = 'Session expirée. Veuillez vous reconnecter.'
+      } else if (err.code === 'ECONNABORTED') {
+        error.value = '⏱️ Timeout: La requête a pris trop de temps. Vérifiez votre connexion.'
       } else {
         error.value = err.response?.data?.message || 'Erreur lors du chargement des messages'
       }
