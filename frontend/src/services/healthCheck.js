@@ -4,9 +4,8 @@
 
 import axios from 'axios'
 
-// Normalize to remove trailing '/api' if user accidentally set it
-const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-const API_BASE_URL = rawApiUrl.replace(/\/api\/?$/,'')
+// Base URL includes '/api' by convention
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 
 export async function checkServerHealth() {
@@ -34,7 +33,7 @@ export async function ensureAuthenticated() {
     const token = localStorage.getItem('auth_token')
     
     if (!token) {
-      const response = await axios.get(`${API_BASE_URL}/api/auth/test-token`, {
+      const response = await axios.get(`${API_BASE_URL}/auth/test-token`, {
         timeout: 5000
       })
       

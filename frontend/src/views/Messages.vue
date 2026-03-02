@@ -472,6 +472,13 @@ import { useRouter } from 'vue-router'
 import { useMessagesStore } from '@/stores/messages'
 import { useDashboardStore } from '@/stores/dashboard'
 import MainLayout from '@/components/Dashboard/Layout/MainLayout.vue'
+// ✅ NOUVEAU: Importer les services WebSocket pour messages en temps réel
+import {
+  initializeWebSocket,
+  subscribeToConversation,
+  disconnectWebSocket,
+  isWebSocketConnected
+} from '@/services/websocket'
 
 const router = useRouter()
 const messagesStore = useMessagesStore()
@@ -487,6 +494,10 @@ const userSearchQuery = ref('')
 const userSearchResults = ref([])
 const showUserSearchResults = ref(false)
 
+// ✅ NOUVEAU: WebSocket pour messages temps réel
+const conversationUnsubscribe = ref(null)  // Fonction pour se désabonner de la conversation actuelle
+const webSocketConnected = ref(false)
+
 // État des appels
 const showCallModal = ref(false)
 const callType = ref('audio')
@@ -497,6 +508,9 @@ const isMuted = ref(false)
 const isSpeakerOn = ref(true)
 const isVideoOn = ref(true)
 const cameraFacing = ref('front')
+
+// ✅ NOUVEAU: Polling pour les conversations (fallback si WebSocket ne fonctionne pas)
+const conversationsPollingInterval = ref(null)
 
 // État de la vidéo
 const localVideoStream = ref(null)
@@ -587,6 +601,31 @@ const selectConversation = async (conversation) => {
   selectedConversation.value = conversation
   messagesStore.markConversationAsRead(conversation.id)
   
+  // ✅ NOUVEAU: S'abonner au flux WebSocket des messages en temps réel
+  // Si déjà abonné à une autre conversation, se désabonner d'abord
+  if (conversationUnsubscribe.value) {
+    conversationUnsubscribe.value()
+    conversationUnsubscribe.value = null
+  }
+  
+  // S'abonner à la nouvelle conversation
+  if (webSocketConnected.value) {
+    try {
+      const currentUser = dashboardStore.currentUser
+      if (currentUser?.id) {
+        conversationUnsubscribe.value = subscribeToConversation(
+          currentUser.id,
+          conversation.id,
+          onRealtimeMessageReceived
+        )
+        console.log(`S'abonné à la conversation avec l'utilisateur ${conversation.id}`)
+      }
+    } catch (error) {
+      console.warn('Erreur abonnement WebSocket conversation:', error)
+    }
+  }
+  
+  // Charger l'historique
   await messagesStore.fetchConversationMessages(conversation.id)
   
   const updatedConversation = messagesStore.conversations.find(c => c.id === conversation.id)
@@ -637,7 +676,59 @@ const sendMessage = async () => {
   }
 }
 
+// ✅ NOUVEAU: Callback pour traiter les messages reçus en temps réel
+const onRealtimeMessageReceived = (messageData) => {
+  try {
+    // Vérifier que nous sommes toujours dans la bonne conversation
+    if (!selectedConversation.value || selectedConversation.value.id !== messageData.receiver_id) {
+      // Message pour une autre conversation, ne pas le traiter ici
+      // Le polling des conversations va l'afficher
+      console.log('Message pour une autre conversation, ignoré')
+      return
+    }
+
+    // Ajouter le message à la conversation actuelle
+    if (!selectedConversation.value.messages) {
+      selectedConversation.value.messages = []
+    }
+
+    const exists = selectedConversation.value.messages.some(m => m.id === messageData.id)
+    if (!exists) {
+      const newMsg = {
+        id: messageData.id,
+        content: messageData.content,
+        time: new Date(messageData.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        isSender: messageData.sender_id === dashboardStore.currentUser?.id,
+        status: messageData.is_read ? 'read' : 'sent',
+        isRead: messageData.is_read || false,
+        type: messageData.type || 'text'
+      }
+      
+      selectedConversation.value.messages.push(newMsg)
+      
+      // Auto-scroll vers le dernier message
+      nextTick(() => {
+        const messagesContainer = document.querySelector('.overflow-y-auto')
+        if (messagesContainer) {
+          messagesContainer.scrollTop = messagesContainer.scrollHeight
+        }
+      })
+      
+      console.log('✅ Nouveau message en temps réel:', messageData)
+    }
+  } catch (error) {
+    console.error('Erreur onRealtimeMessageReceived:', error)
+  }
+}
+
 const goBackToConversations = () => {
+  // ✅ NOUVEAU: Se désabonner du flux WebSocket quand on ferme la conversation
+  if (conversationUnsubscribe.value) {
+    conversationUnsubscribe.value()
+    conversationUnsubscribe.value = null
+    console.log('Désabonné de la conversation')
+  }
+  
   selectedConversation.value = null
 }
 
@@ -838,6 +929,19 @@ const startCallTimer = () => {
 onMounted(async () => {
   await loadInitialData()
   
+  // ✅ NOUVEAU: Initialiser WebSocket pour les messages temps réel
+  try {
+    const token = localStorage.getItem('token') || localStorage.getItem('auth_token')
+    if (token) {
+      initializeWebSocket(token)
+      webSocketConnected.value = true
+      console.log('✓ WebSocket initialisé pour Messages.vue')
+    }
+  } catch (error) {
+    console.warn('Erreur initialisation WebSocket:', error)
+    webSocketConnected.value = false
+  }
+  
   // Vérifier disponibilité caméra
   try {
     const devices = await navigator.mediaDevices.enumerateDevices()
@@ -847,6 +951,15 @@ onMounted(async () => {
     console.warn('Impossible de vérifier les périphériques vidéo:', error)
     isVideoAvailable.value = false
   }
+  
+  // Polling pour les conversations (fallback si WebSocket ne marche pas)
+  conversationsPollingInterval.value = setInterval(async () => {
+    try {
+      await messagesStore.fetchConversations()
+    } catch (error) {
+      console.warn('Erreur lors du polling des conversations:', error)
+    }
+  }, 30000)  // 30 secondes
 })
 
 // Watcher pour auto-scroll
@@ -864,6 +977,18 @@ onUnmounted(() => {
   if (callTimer.value) {
     clearInterval(callTimer.value)
   }
+  // Nettoyer le polling
+  if (conversationsPollingInterval.value) {
+    clearInterval(conversationsPollingInterval.value)
+  }
+  // ✅ NOUVEAU: Se désabonner de la conversation WebSocket
+  if (conversationUnsubscribe.value) {
+    conversationUnsubscribe.value()
+    conversationUnsubscribe.value = null
+  }
+  // ✅ NOUVEAU: Fermer le WebSocket en quittant la page (optionnel)
+  // disconnectWebSocket()  // Décommenter si besoin de fermer la connexion
+  
   if (localVideoStream.value) {
     localVideoStream.value.getTracks().forEach(track => track.stop())
   }

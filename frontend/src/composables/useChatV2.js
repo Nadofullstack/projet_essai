@@ -109,15 +109,22 @@ export function useChat() {
    */
   const onMessageReceived = (messageData) => {
     try {
-      // Mettre à jour le store de conversations pour refléter le nouveau message
+      // ✅ NOUVEAU: Mettre à jour le store de conversations
+      // Cela crée automatiquement la conversation si elle n'existe pas
       const messagesStore = useMessagesStore()
       if (typeof messagesStore.handleIncomingMessage === 'function') {
         messagesStore.handleIncomingMessage(messageData)
       }
 
-      // Mettre aussi à jour le buffer local de messages (si nécessaire)
+      // Mettre aussi à jour le buffer local de messages
       const exists = messages.value.some((m) => m.id === messageData.id)
       if (!exists) messages.value.push(messageData)
+      
+      // ✅ NOUVEAU: Recharger les conversations pour incluire la nouvelle si nécessaire
+      // Utiliser setTimeout pour éviter une boucle infinie
+      setTimeout(() => {
+        messagesStore.fetchConversations()
+      }, 500)
     } catch (err) {
       console.error('Erreur onMessageReceived:', err)
     }

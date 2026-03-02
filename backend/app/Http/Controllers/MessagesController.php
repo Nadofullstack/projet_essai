@@ -96,6 +96,10 @@ class MessagesController extends Controller
         }
 
         $message = Messages::create($data);
+        
+        // ✅ NOUVEAU: Dispatcher l'événement pour WebSocket/Reverb
+        // Cela permet à B d'être notifié instantanément s'il est connecté
+        event(new \App\Events\MessageSent($message));
 
         return response()->json([
             'success' => true,
@@ -169,14 +173,16 @@ class MessagesController extends Controller
             $user = Auth::user();
             
             // ✅ OPTIMISÉ: Récupérer uniquement les colonnes nécessaires
-            // ✅ Limiter à 500 messages pour éviter timeout
+            // ✅ IMPORTANT: where('deleted_at', null) exclut les soft-deleted messages
+            // ✅ Augmenter à 1000 pour éviter de manquer les conversations récentes
             $messages = Messages::select('id', 'sender_id', 'receiver_id', 'content', 'created_at', 'is_read')
                 ->where(function ($query) use ($user) {
                     $query->where('sender_id', $user->id)
                           ->orWhere('receiver_id', $user->id);
                 })
+                ->where('deleted_at', null)  // ✅ CRUCIAL: Ne pas inclure les messages supprimés
                 ->orderBy('created_at', 'desc')
-                ->limit(500)
+                ->limit(1000)  // Augmenter pour éviter de manquer les conversations
                 ->get();
 
             // Grouper par conversation
@@ -213,7 +219,7 @@ class MessagesController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => array_slice($conversations, 0, 20)  // ✅ Retourner max 20 au lieu de 10
+                'data' => array_slice($conversations, 0, 100)  // ✅ Retourner max 100 (peut être paginé si besoin)
             ]);
         } catch (\Exception $e) {
             \Log::error('Erreur conversations: ' . $e->getMessage());

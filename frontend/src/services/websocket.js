@@ -42,22 +42,45 @@ export function initializeWebSocket(token) {
     },
   });
 
-  // Événements de connexion
-  echo.connector.socket.on('connect', () => {
-    console.log('✓ WebSocket connecté');
-    isConnected = true;
-    reconnectAttempts = 0;
-  });
+  console.log('Echo instance créé', echo);
 
-  echo.connector.socket.on('disconnect', () => {
-    console.log('✗ WebSocket déconnecté');
-    isConnected = false;
-    attemptReconnection(token);
-  });
+  // Écoute des événements de connexion (peut ne pas être immédiatement disponible)
+  // éviter une boucle infinie si echo.connector resta indéfini
+  let listenerAttempts = 0;
+  const MAX_LISTENER_ATTEMPTS = 50; // ~5 secondes de tentatives
 
-  echo.connector.socket.on('error', (error) => {
-    console.error('Erreur WebSocket:', error);
-  });
+  const attachSocketListeners = () => {
+    const socket = echo.connector?.socket;
+    if (!socket) {
+      listenerAttempts++;
+      if (listenerAttempts > MAX_LISTENER_ATTEMPTS) {
+        console.error('Impossible d\'obtenir le socket Echo après plusieurs tentatives');
+        return;
+      }
+      // pas encore prêt, réessayer un peu plus tard
+      console.warn(`Echo connector/socket pas encore prêt, réessaie dans 100ms (${listenerAttempts}/${MAX_LISTENER_ATTEMPTS})`);
+      setTimeout(attachSocketListeners, 100);
+      return;
+    }
+
+    socket.on('connect', () => {
+      console.log('✓ WebSocket connecté');
+      isConnected = true;
+      reconnectAttempts = 0;
+    });
+
+    socket.on('disconnect', () => {
+      console.log('✗ WebSocket déconnecté');
+      isConnected = false;
+      attemptReconnection(token);
+    });
+
+    socket.on('error', (error) => {
+      console.error('Erreur WebSocket:', error);
+    });
+  };
+
+  attachSocketListeners();
 
   return echo;
 }

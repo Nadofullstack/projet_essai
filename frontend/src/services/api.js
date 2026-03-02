@@ -1,8 +1,8 @@
 // Configuration de l'API
 import axios from 'axios'
-// Retrieve base URL from env and strip any trailing '/api' to avoid double prefix
-const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
-const API_BASE_URL = rawApiUrl.replace(/\/api\/?$/,'')
+// Base URL comes from VITE_API_URL which should include '/api' suffix
+// this allows requests like api.get('/messages') to target /api/messages
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api'
 
 
 // Création d'une instance axios
